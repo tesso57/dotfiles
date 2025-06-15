@@ -1,0 +1,8 @@
+[tools]
+buf = "latest"
+go = "latest"
+golangci-lint = "latest"
+node = "latest"
+python = "latest"
+rust = "latest"
+terraform = "latest"

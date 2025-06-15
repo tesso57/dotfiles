@@ -1,0 +1,22 @@
+[filter "lfs"]
+process = git-lfs filter-process
+required = true
+clean = git-lfs clean -- %f
+smudge = git-lfs smudge -- %f
+[user]
+name = tesso57
+email = mail@tesso.dev
+[core]
+editor = vim
+[push]
+autoSetupRemote = true
+[init]
+defaultBranch = main
+[color]
+ui=auto
+
+[includeIf "gitdir:~/Documents/repos/knowledgework/"]
+path = ~/.knowledgework.gitconfig
+
+[includeIf "gitdir:~/Documents/repos/no9jp/"]
+path = ~/.no9jp.gitconfig
