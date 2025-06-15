@@ -1,3 +1,17 @@
+format = """
+$all\
+$time\
+$line_break\
+$jobs\
+$battery\
+$status\
+$os\
+$container\
+$netns\
+$shell\
+$character
+"""
+
 [aws]
 format = '\[[$symbol($profile)(\($region\))(\[$duration\])]($style)\]'
 
@@ -184,6 +198,7 @@ format = '\[[$symbol$workspace]($style)\]'
 
 [time]
 format = '\[[$time]($style)\]'
+disabled = false
 
 [username]
 format = '\[[$user]($style)\]'
