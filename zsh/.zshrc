@@ -22,7 +22,6 @@ function fzf-select-history() {
     zle reset-prompt
 }
 zle -N fzf-select-history
-bindkey '^r' fzf-select-history
 
 
 function fzf-cd() {
@@ -44,7 +43,6 @@ cls_img() {
 
 setopt noflowcontrol
 zle -N fzf-cd
-bindkey '^q' fzf-cd
 
 if [ ! -f "~/.zsh_secrets" ]; then
   touch ~/.zsh_secrets
@@ -59,6 +57,9 @@ antidote load
 eval "$(zoxide init zsh)"
 eval "$(mise activate zsh)"
 eval "$(starship init zsh)"
+
+bindkey '^q' fzf-cd
+bindkey '^r' fzf-select-history
 
 # transient prompt
 precmd_functions=(zvm_init "${(@)precmd_functions:#zvm_init}")
