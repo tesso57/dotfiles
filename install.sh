@@ -28,11 +28,7 @@ cd "$GITHUB_DIR"
 brew bundle -v --file="$GITHUB_DIR/home/.Brewfile"
 
 # ファイルリンク
-stow -t $HOME -vR home mise zsh cargo starship claude vim
+stow -t $HOME -vR home mise zsh starship claude vim
 
 # mise install
 mise install
-
-# cargo install
-cargo install --git https://github.com/itsjunetime/cargo-restore.git
-cargo restore

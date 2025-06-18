@@ -1,5 +1,7 @@
 [tools]
 buf = "latest"
+"cargo:bat" = "latest"
+"cargo:eza" = "latest"
 go = "latest"
 golangci-lint = "latest"
 node = "latest"
