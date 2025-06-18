@@ -28,7 +28,7 @@ cd "$GITHUB_DIR"
 brew bundle -v --file="$GITHUB_DIR/home/.Brewfile"
 
 # ファイルリンク
-stow -t $HOME -vR home mise zsh cargo starship claude
+stow -t $HOME -vR home mise zsh cargo starship claude vim
 
 # mise install
 mise install

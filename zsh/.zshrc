@@ -46,13 +46,16 @@ setopt noflowcontrol
 zle -N fzf-cd
 bindkey '^q' fzf-cd
 
+if [ ! -f "~/.zsh_secrets" ]; then
+  touch ~/.zsh_secrets
+fi
 
 source ~/.zsh_secrets
 
 source /opt/homebrew/opt/antidote/share/antidote/antidote.zsh
 
 eval "$(/opt/homebrew/bin/brew shellenv)"
-antidote load ~/.zsh_plugins.txt
+antidote load
 eval "$(zoxide init zsh)"
 eval "$(mise activate zsh)"
 eval "$(starship init zsh)"
