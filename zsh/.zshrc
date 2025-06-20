@@ -1,7 +1,3 @@
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
-fi
-
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 # zsh history
 HISTFILE=~/.zsh_history
@@ -12,7 +8,6 @@ setopt hist_ignore_dups
 setopt hist_ignore_all_dups
 setopt hist_ignore_space
 setopt hist_reduce_blanks
-
 setopt print_eight_bit
 
 # fzf history
@@ -122,5 +117,5 @@ zvm_after_init_commands+=('
 
 alias ll="eza -lauUh --icons=auto --hyperlink"
 alias ls="eza"
-alias cd="z"
 alias cat="bat"
+alias claude="~/.claude/local/claude"
