@@ -36,6 +36,10 @@ cls_img() {
   docker image rm -f $(docker images -q)
 }
 
+rpout() {
+   git ls-files | while read -r f; do MIME_TYPE=$(file -b --mime-type "$f"); if [[ $MIME_TYPE == text/* ]]; then ext="${f##*.}"; echo "### \`$f\`"; echo "\`\`\`${ext}"; cat "$f"; echo; echo "\`\`\`"; echo; else echo "### \`$f\`"; echo "[SKIPPING BINARY FILE ($MIME_TYPE)]"; echo; fi; done 
+}
+
 setopt noflowcontrol
 zle -N fzf-cd
 
