@@ -37,7 +37,25 @@ cls_img() {
 }
 
 rpout() {
-   git ls-files | while read -r f; do MIME_TYPE=$(file -b --mime-type "$f"); if [[ $MIME_TYPE == text/* ]]; then ext="${f##*.}"; echo "### \`$f\`"; echo "\`\`\`${ext}"; cat "$f"; echo; echo "\`\`\`"; echo; else echo "### \`$f\`"; echo "[SKIPPING BINARY FILE ($MIME_TYPE)]"; echo; fi; done 
+  git ls-files | while read -r f; do
+    MIME_TYPE=$(file -b --mime-type "$f")
+    
+    if [[ $MIME_TYPE == text/* ]]; then
+      # テキストファイルの場合
+      ext="${f##*.}"
+      echo "### \`$f\`"
+      echo "\`\`\`${ext}"
+      cat "$f"
+      echo
+      echo "\`\`\`"
+      echo
+    else
+      # バイナリファイルの場合
+      echo "### \`$f\`"
+      echo "[SKIPPING BINARY FILE ($MIME_TYPE)]"
+      echo
+    fi
+  done
 }
 
 setopt noflowcontrol
