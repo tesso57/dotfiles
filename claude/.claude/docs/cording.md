@@ -668,6 +668,87 @@ myproject/
     └── api/      // 公開API
 ```
 
+## コードの簡潔性
+
+### 中間変数の削減
+不要な中間変数を削除することで、コードをより簡潔で読みやすくできます。
+
+```go
+// Bad - 不要な中間変数
+func GetUserAge(id string) (int, error) {
+    user, err := getUserByID(id)
+    if err != nil {
+        return 0, err
+    }
+    age := user.Age
+    return age, nil
+}
+
+// Good - 直接返す
+func GetUserAge(id string) (int, error) {
+    user, err := getUserByID(id)
+    if err != nil {
+        return 0, err
+    }
+    return user.Age, nil
+}
+
+// Bad - 複数の中間変数
+func CalculateTotal(items []Item) float64 {
+    subtotal := calculateSubtotal(items)
+    tax := subtotal * taxRate
+    total := subtotal + tax
+    return total
+}
+
+// Good - 式を直接使用（読みやすさを損なわない範囲で）
+func CalculateTotal(items []Item) float64 {
+    subtotal := calculateSubtotal(items)
+    return subtotal + (subtotal * taxRate)
+}
+
+// Bad - 一時的な変数への代入
+func FormatUserName(user *User) string {
+    name := user.FirstName + " " + user.LastName
+    formatted := strings.TrimSpace(name)
+    return formatted
+}
+
+// Good - メソッドチェーンや直接返却
+func FormatUserName(user *User) string {
+    return strings.TrimSpace(user.FirstName + " " + user.LastName)
+}
+```
+
+ただし、以下の場合は中間変数を使用する方が良い：
+- デバッグやロギングに必要な場合
+- 複雑な計算で段階的な結果を確認したい場合
+- 変数名が処理の意図を明確にする場合
+- 同じ値を複数回使用する場合
+
+```go
+// 中間変数が有用な例 - 意図の明確化
+func IsValidEmail(email string) bool {
+    hasAtSymbol := strings.Contains(email, "@")
+    hasDot := strings.Contains(email, ".")
+    isLongEnough := len(email) >= 5
+    
+    return hasAtSymbol && hasDot && isLongEnough
+}
+
+// 中間変数が有用な例 - 再利用
+func ProcessOrder(order *Order) error {
+    total := calculateTotal(order)
+    
+    if total > maxOrderAmount {
+        return fmt.Errorf("order total %v exceeds maximum", total)
+    }
+    
+    order.Total = total
+    return nil
+}
+```
+
 ## コードレビューチェックリスト
 
 ### フォーマットとスタイル
