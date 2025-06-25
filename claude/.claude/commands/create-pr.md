@@ -1,12 +1,12 @@
 ---
-# Claude Code が実行してよい Bash サブコマンドを明示
+# Explicitly specify the Bash subcommands that Claude Code is allowed to execute
 allowed-tools:
   - Bash(git status:*      )
   - Bash(git diff:*        )
   - Bash(git branch:*      )
   - Bash(git push:*        )
   - Bash(gh pr create:*    )
-description: "現在のブランチからドラフト PR を作成する"
+description: "Create a draft PR from the current branch"
 ---
 
 ## Context
@@ -15,18 +15,17 @@ description: "現在のブランチからドラフト PR を作成する"
 - **Diff summary**:   !`git diff --stat origin/develop`
 
 ## Your task
-1. 上記コンテキストを読み取り、60 字以内で要点を表す **PR タイトル**（日本語）。
-2. 以下の項目を含む **PR 本文**（Markdown、日本語）。
-    - プロジェクトに `.github/PR_TEMPLATE.md` がある場合は，それを参照してください．
-    - ない場合は，以下の項目を含む
-        - 背景 / 目的  
-        - 変更点の詳細  
-        - 影響範囲  
-        - 動作確認方法  
-        - 関連 Issue / チケット  
-        - レビューポイント
-3. 生成したタイトル・本文を使って **Bash**: 
+1. Read the context above and create a **PR Title** (in Japanese) that summarizes the main points within 60 characters.
+2. Create a **PR Body** (in Markdown, Japanese) that includes the following sections.
+    - If the project has a `.github/PR_TEMPLATE.md`, refer to it.
+    - Otherwise, include the following sections:
+        - Background / Purpose
+        - Details of Changes
+        - Impact Range
+        - How to Verify
+        - Related Issues / Tickets
+        - Review Points
+3. Use the generated title and body to execute the following **Bash** command and output the URL:
 ```bash
 gh pr create --title "$TITLE" --body "$BODY" --base develop --draft -a tesso57
 ```
-を実行しURLを出力してください．
