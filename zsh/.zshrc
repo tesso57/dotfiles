@@ -36,6 +36,10 @@ cls_img() {
   docker image rm -f $(docker images -q)
 }
 
+gw() {
+	git worktree add -b $1 ../worktree/${1//\//_} develop
+}
+
 rpout() {
   git ls-files | while read -r f; do
     MIME_TYPE=$(file -b --mime-type "$f")

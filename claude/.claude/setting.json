@@ -10,7 +10,8 @@
             "Read(~/.zshrc)",
             "Read(~/.zprofile)",
             "Bash(gh pr view)",
-            "Bash(gh pr diff)"
+            "Bash(gh pr diff)",
+            "Bash(go test:*)"
         ],
         "deny": []
     },

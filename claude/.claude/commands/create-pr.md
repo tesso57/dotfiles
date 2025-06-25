@@ -27,6 +27,6 @@ description: "現在のブランチからドラフト PR を作成する"
         - レビューポイント
 3. 生成したタイトル・本文を使って **Bash**: 
 ```bash
-gh pr create --title "$TITLE" --body "$BODY" --base develop --draft
+gh pr create --title "$TITLE" --body "$BODY" --base develop --draft -a tesso57
 ```
 を実行しURLを出力してください．
