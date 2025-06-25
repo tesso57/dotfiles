@@ -140,4 +140,5 @@ zvm_after_init_commands+=('
 alias ll="eza -lauUh --icons=auto --hyperlink"
 alias ls="eza"
 alias cat="bat"
+
 alias claude="~/.claude/local/claude"
