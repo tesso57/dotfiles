@@ -7,17 +7,18 @@
             "Bash(find:*)",
             "Bash(git fetch:*)",
             "Bash(ls:*)",
-            "Read(~/.zshrc)",
-            "Read(~/.zprofile)",
             "Bash(gh pr view:*)",
             "Bash(gh pr diff:*)",
-            "Bash(go test:*)"
+            "Bash(go test:*)",
+            "Bash(go build:*)",
+            "Bash(go tool:*)",
+            "Bash(rg:*)",
+            "Read(~/.zshrc)",
+            "Read(~/.zprofile)"
         ],
         "deny": []
     },
     "env": {
-        "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
-        "OTEL_METRICS_EXPORTER": "otlp",
         "USE_BUILTIN_RIPGREP": 1
     },
     "model": "opus"
