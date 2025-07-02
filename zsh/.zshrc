@@ -37,7 +37,7 @@ cls_img() {
 }
 
 gw() {
-	git worktree add -b $1 ../worktree/${1//\//_} develop
+	git worktree add -b $1 ./.git/worktree/${1//\//_} develop
 }
 
 rpout() {

@@ -27,5 +27,5 @@ description: "Create a draft PR from the current branch"
         - Review Points
 3. Use the generated title and body to execute the following **Bash** command and output the URL:
 ```bash
-gh pr create --title "$TITLE" --body "$BODY" --base develop --draft -a tesso57
+gh pr create --title "$TITLE" --body "$BODY" --base develop --draft --assignee tesso57 --label "auto-generated, claude code"
 ```

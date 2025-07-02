@@ -1,4 +1,7 @@
 {
+    "env": {
+        "USE_BUILTIN_RIPGREP": "1"
+    },
     "permissions": {
         "allow": [
             "Bash(npm run lint)",
@@ -13,13 +16,33 @@
             "Bash(go build:*)",
             "Bash(go tool:*)",
             "Bash(rg:*)",
+            "Bash(cat:*)",
+            "Bash(echo:*)",
+            "Bash(head:*)",
+            "Bash(tail:*)",
+            "Bash(sort:*)",
+            "Bash(wc:*)",
             "Read(~/.zshrc)",
-            "Read(~/.zprofile)"
+            "Read(~/.zprofile)",
+            "Read(~/.claude/templates)",
+            "Read(~/.claude/scripts)",
+            "Read(~/.claude/docs)",
+            "Read(~/.claude/state)"
         ],
         "deny": []
     },
-    "env": {
-        "USE_BUILTIN_RIPGREP": 1
-    },
-    "model": "opus"
+    "model": "opus",
+    "hooks": {
+        "Notification": [
+            {
+                "matcher": "",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "~/.claude/scripts/notification.mjs"
+                    }
+                ]
+            }
+        ]
+    }
 }

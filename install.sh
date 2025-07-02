@@ -28,7 +28,7 @@ cd "$GITHUB_DIR"
 brew bundle -v --file="$GITHUB_DIR/home/.Brewfile"
 
 # ファイルリンク
-stow -t $HOME -vR home mise zsh starship claude vim
+"$GITHUB_DIR/sync.sh"
 
 # mise install
 mise install
