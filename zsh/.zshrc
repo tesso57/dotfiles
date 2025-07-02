@@ -146,3 +146,7 @@ alias ls="eza"
 alias cat="bat"
 
 alias claude="~/.claude/local/claude"
+
+# path
+
+export PATH="$HOME/bin:$PATH"
