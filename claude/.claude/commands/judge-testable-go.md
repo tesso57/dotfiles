@@ -1,90 +1,84 @@
 ---
 allowed-tools:
-  # ファイル読み取り
-  - Read
-  # ファイル内容取得用
+  - Read(*:*)
   - Bash(cat:*)
+  - Bash(echo:*)
 description: |
-  指定されたGoファイルがテスト対象として適切かどうかを判定するヘルパーコマンド。
+  単一のGoファイルがテスト対象かどうかを判定する。
+  JSON形式で結果を返す: {"testable": true/false, "reason": "説明"}
   
-  このコマンドは単一のGoファイルパスを入力として受け取り、
-  そのファイルがテストを書くべきかどうかを判定して、
-  JSON形式で結果を返します。
-  
-  返却形式:
-  - テスト対象の場合: {"testable": true}
-  - テスト対象外の場合: {"testable": false, "reason": "除外理由"}
-  
-  除外基準:
-  - インターフェース定義のみのファイル
-  - テスト支援用ファイル（mock, fixture, testutil等）
-  - 自動生成されたファイル（.pb.go, _gen.go等）
+  使用例: claude code /judge-testable-go "pkg/domains/user.go"
 ---
 
-# judge-testable-go
-
-指定されたGoファイルがテスト対象として適切かどうかを判定します。
+## 重要な注意事項
+**このコマンドはJSONのみを出力します。説明文や解説は一切出力しません。**
 
 ## 使用方法
+ファイルパスを引数として受け取り、そのファイルがテスト対象かどうかを判定します。
 
+## 判定基準
+
+### 除外すべきファイル:
+1. インターフェース定義のみのファイル
+2. テスト支援用ファイル（mock, fixture, testutil等）
+3. 生成されたファイル（.pb.go, _gen.go等）
+
+### テスト対象にすべきファイル:
+- 実装ロジックを含むGoファイル
+
+## 出力形式
+```json
+{
+  "testable": true,
+  "reason": ""
+}
 ```
-judge-testable-go <go_file_path>
+または
+```json
+{
+  "testable": false,  
+  "reason": "interface only file"
+}
 ```
 
-## 処理フロー
-
-1. 引数で指定されたGoファイルパスを受け取る
-2. ファイルの内容を読み取る
-3. 以下の除外条件をチェック：
-   - インターフェース定義のみのファイル
-   - テスト支援用ファイル（mock, fixture等）
-   - 自動生成されたファイル
-4. JSON形式で結果を返す
-
-## 除外判定の詳細
-
-### 1. インターフェース定義のみのファイル
-- `type XXX interface { ... }` のみで実装を含まないファイル
-
-### 2. テスト支援用ファイル（ファイル名またはパスに以下を含む）
-- `mock` / `mocks` / `mockclient`
-- `fixture` / `fixtures`
-- `testutil` / `testhelper` / `testing`
-- `fake` / `fakes` / `stub` / `stubs`
-- `_test_utils` / `_testdata` / `testdata`
-- `dummy` / `example` / `sample`
-
-### 3. 生成されたファイル
-- `// Code generated ... DO NOT EDIT.` を含むファイル
-- `.pb.go` (Protocol Buffers)
-- `_gen.go` / `_generated.go`
+---
 
 ## Workflow (for Claude)
 
-1. 引数チェック
-   - 引数が1つ提供されているか確認
-   - 引数がGoファイル（.go拡張子）であるか確認
+重要: このコマンドはJSONのみを出力します。説明や解説は一切含めません。
 
-2. ファイル内容の読み取り
-   ```bash
-   cat <file_path>
-   ```
+1. ユーザーから提供されたファイルパスを取得（コマンドライン引数として渡される）
+2. ファイルの存在を確認し、存在しない場合は `{"testable": false, "reason": "file not found"}` を返す
+3. ファイルを読み込む（cat または Read）
+4. 以下の条件で判定:
+5. 最後に必ずJSONのみを出力（説明文は一切含めない）
 
-3. 除外条件の判定
-   - ファイルパスに基づく判定（テスト支援用ファイル、生成ファイル）
-   - ファイル内容に基づく判定（インターフェースのみ、自動生成コメント）
+### 除外条件（testable: false）
+- ファイルパスに以下を含む:
+  - mock, mocks, mockclient
+  - fixture, fixtures  
+  - testutil, testhelper, testing
+  - fake, fakes, stub, stubs
+  - _test_utils, _testdata, testdata
+  - dummy, example, sample
+- ファイル名が以下のパターン:
+  - .pb.go (Protocol Buffers)
+  - _gen.go, _generated.go
+- ファイル内容が:
+  - `// Code generated ... DO NOT EDIT.` を含む
+  - interface定義のみ（実装メソッドなし）
 
-4. 結果のJSON出力
-   - テスト対象の場合：
-     ```json
-     {"testable": true}
-     ```
-   - テスト対象外の場合：
-     ```json
-     {"testable": false, "reason": "除外理由の説明"}
-     ```
+### JSON出力（必須）
+必ず以下の形式でJSONのみを出力してください。説明や解説は一切含めず、JSONだけを返してください:
+```json
+{"testable": true, "reason": ""}
+```
+または  
+```json
+{"testable": false, "reason": "mock file"}
+```
 
-## エラーハンドリング
-- ファイルが存在しない場合：`{"testable": false, "reason": "File not found"}`
-- 読み取り権限がない場合：`{"testable": false, "reason": "Permission denied"}`
-- Goファイルでない場合：`{"testable": false, "reason": "Not a Go file"}`
+重要: 
+- JSONのみを出力し、それ以外のテキスト（説明、解説、考察など）は一切出力しない
+- 出力は1行のJSON形式とする
+- ファイルの内容に関する説明は不要
