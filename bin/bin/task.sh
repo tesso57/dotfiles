@@ -467,12 +467,14 @@ show_help() {
     echo ""
     echo "コマンド:"
     echo "  add <タスクファイル名> <ファイル内容>      タスクファイルを追加"
-    echo "  tags list <タスクファイル名>               タスクファイルのプロパティ一覧を表示"
-    echo "  tags get <タスクファイル名> <プロパティ>    特定のプロパティ値を取得"
-    echo "  tags add <タスクファイル名> <プロパティ> <値> プロパティを追加/更新"
-    echo "  tags rm <タスクファイル名> <プロパティ>     プロパティを削除"
-    echo "  tags clear <タスクファイル名>              全プロパティを削除"
+    echo "  tags list [ファイル名]                     markdownファイル一覧またはプロパティ表示"
+    echo "  tags get <ファイル名> <プロパティ>          特定のプロパティ値を取得"
+    echo "  tags add <ファイル名> <プロパティ> <値>      プロパティを追加/更新"
+    echo "  tags rm <ファイル名> <プロパティ>           プロパティを削除"
+    echo "  tags clear <ファイル名>                    全プロパティを削除"
     echo "  help                                      このヘルプメッセージを表示"
+    echo ""
+    echo "注: tags コマンドは $HOME/Documents/Obsidian Vault/tasks 内のファイルを操作します"
     echo ""
     echo "例:"
     echo "  $0 add new_feature.md \"新機能の実装タスク\""
@@ -503,10 +505,18 @@ case "$COMMAND" in
         fi
         ;;
     tags)
-        # タグサブコマンド処理
+        # DEFAULT_TASK_DIR内のmarkdownファイルのタグ管理
         if [ $# -eq 0 ]; then
-            echo "エラー: tagsコマンドにはサブコマンドが必要です" >&2
-            echo "使用可能なサブコマンド: list, get, add, rm, clear" >&2
+            echo "使用方法: $0 tags <subcommand> <file> [arguments]" >&2
+            echo "" >&2
+            echo "サブコマンド:" >&2
+            echo "  list [file]                    markdownファイルの全プロパティを表示（ファイル省略時は一覧表示）" >&2
+            echo "  get <file> <property>          特定のプロパティの値を取得" >&2
+            echo "  add <file> <property> <value>  プロパティを追加・更新" >&2
+            echo "  rm <file> <property>           プロパティを削除" >&2
+            echo "  clear <file>                   全プロパティを削除" >&2
+            echo "" >&2
+            echo "注: <file>は$DEFAULT_TASK_DIR内のmarkdownファイルを指定" >&2
             exit 1
         fi
         
@@ -515,48 +525,100 @@ case "$COMMAND" in
         
         case "$TAGS_SUBCOMMAND" in
             list)
-                if [ $# -lt 1 ]; then
-                    echo "使用方法: $0 tags list <タスクファイル名>" >&2
-                    exit 1
+                if [ $# -eq 0 ]; then
+                    # ファイル名が指定されない場合は、ディレクトリ内のmarkdownファイル一覧を表示
+                    echo "利用可能なmarkdownファイル ($DEFAULT_TASK_DIR):"
+                    if [ -d "$DEFAULT_TASK_DIR" ]; then
+                        find "$DEFAULT_TASK_DIR" -name "*.md" -type f -exec basename {} \; | sort
+                    else
+                        echo "ディレクトリが存在しません: $DEFAULT_TASK_DIR"
+                    fi
+                else
+                    # ファイル名が指定された場合
+                    FILE_NAME="$1"
+                    if [[ ! "$FILE_NAME" =~ \.md$ ]]; then
+                        FILE_NAME="${FILE_NAME}.md"
+                    fi
+                    FILE_PATH="$DEFAULT_TASK_DIR/$FILE_NAME"
+                    
+                    if [[ -f "$FILE_PATH" ]]; then
+                        list_properties "$FILE_PATH"
+                    else
+                        echo "エラー: ファイル '$FILE_PATH' が見つかりません" >&2
+                        exit 1
+                    fi
                 fi
-                TASK_FILE=$(get_task_file_path "$1")
-                list_properties "$TASK_FILE"
                 exit $?
                 ;;
             get)
                 if [ $# -lt 2 ]; then
-                    echo "使用方法: $0 tags get <タスクファイル名> <プロパティ>" >&2
+                    echo "使用方法: $0 tags get <file> <property>" >&2
                     exit 1
                 fi
-                TASK_FILE=$(get_task_file_path "$1")
-                get_property "$TASK_FILE" "$2"
+                FILE_NAME="$1"
+                if [[ ! "$FILE_NAME" =~ \.md$ ]]; then
+                    FILE_NAME="${FILE_NAME}.md"
+                fi
+                FILE_PATH="$DEFAULT_TASK_DIR/$FILE_NAME"
+                
+                if [[ ! -f "$FILE_PATH" ]]; then
+                    echo "エラー: ファイル '$FILE_PATH' が見つかりません" >&2
+                    exit 1
+                fi
+                
+                get_property "$FILE_PATH" "$2"
                 exit $?
                 ;;
             add)
                 if [ $# -lt 3 ]; then
-                    echo "使用方法: $0 tags add <タスクファイル名> <プロパティ> <値>" >&2
+                    echo "使用方法: $0 tags add <file> <property> <value>" >&2
                     exit 1
                 fi
-                TASK_FILE=$(get_task_file_path "$1")
-                add_property "$TASK_FILE" "$2" "$3"
+                FILE_NAME="$1"
+                if [[ ! "$FILE_NAME" =~ \.md$ ]]; then
+                    FILE_NAME="${FILE_NAME}.md"
+                fi
+                FILE_PATH="$DEFAULT_TASK_DIR/$FILE_NAME"
+                
+                add_property "$FILE_PATH" "$2" "$3"
                 exit $?
                 ;;
             rm)
                 if [ $# -lt 2 ]; then
-                    echo "使用方法: $0 tags rm <タスクファイル名> <プロパティ>" >&2
+                    echo "使用方法: $0 tags rm <file> <property>" >&2
                     exit 1
                 fi
-                TASK_FILE=$(get_task_file_path "$1")
-                remove_property "$TASK_FILE" "$2"
+                FILE_NAME="$1"
+                if [[ ! "$FILE_NAME" =~ \.md$ ]]; then
+                    FILE_NAME="${FILE_NAME}.md"
+                fi
+                FILE_PATH="$DEFAULT_TASK_DIR/$FILE_NAME"
+                
+                if [[ ! -f "$FILE_PATH" ]]; then
+                    echo "エラー: ファイル '$FILE_PATH' が見つかりません" >&2
+                    exit 1
+                fi
+                
+                remove_property "$FILE_PATH" "$2"
                 exit $?
                 ;;
             clear)
                 if [ $# -lt 1 ]; then
-                    echo "使用方法: $0 tags clear <タスクファイル名>" >&2
+                    echo "使用方法: $0 tags clear <file>" >&2
                     exit 1
                 fi
-                TASK_FILE=$(get_task_file_path "$1")
-                clear_properties "$TASK_FILE"
+                FILE_NAME="$1"
+                if [[ ! "$FILE_NAME" =~ \.md$ ]]; then
+                    FILE_NAME="${FILE_NAME}.md"
+                fi
+                FILE_PATH="$DEFAULT_TASK_DIR/$FILE_NAME"
+                
+                if [[ ! -f "$FILE_PATH" ]]; then
+                    echo "エラー: ファイル '$FILE_PATH' が見つかりません" >&2
+                    exit 1
+                fi
+                
+                clear_properties "$FILE_PATH"
                 exit $?
                 ;;
             *)
