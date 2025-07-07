@@ -2,6 +2,7 @@
 buf = "latest"
 "cargo:bat" = "latest"
 "cargo:eza" = "latest"
+deno = "latest"
 go = "latest"
 golangci-lint = "latest"
 node = "latest"

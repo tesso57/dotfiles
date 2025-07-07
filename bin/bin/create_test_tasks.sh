@@ -52,7 +52,11 @@ create_task_file() {
     pkg_path="${pkg_path#pkg/}"
 
     local base_name=$(basename "$file_rel" .go)
-    local task_file="test_${base_name}.md"
+    # ファイル名用のタイトル
+    # アンダースコアを一時的に保護してからスラッシュをハイフンに変換
+    local title_for_filename="${file_rel//_/@@UNDERSCORE@@}"
+    title_for_filename="${title_for_filename//\//-}"
+    title_for_filename="${title_for_filename//@@UNDERSCORE@@/_}"
     local title="📦 テスト追加: ${file_rel}"
 
     # テンプレートから本文を生成
@@ -60,20 +64,25 @@ create_task_file() {
         -e "s|{PKG_PATH}|${pkg_path}|g" \
         "$TEMPLATE_FILE")
 
-    # タスクファイル作成
-    if ~/bin/task.sh add "$task_file" "${title}
+    # locusコマンドでタスク作成
+    local result
+    result=$(locus add "$title_for_filename" --body "# ${title}
 
-${body}" >/dev/null 2>&1; then
-        # メタデータ追加（エラーは無視）
-        local current_branch=$(git branch --show-current 2>/dev/null || echo "main")
-        ~/bin/md_prop.sh add "$task_file" "source_branch" "$current_branch"
-        ~/bin/md_prop.sh add "$task_file" "tags" "auto generated"
-        ~/bin/md_prop.sh add "$task_file" "assigner" "claude code"
-        ~/bin/md_prop.sh add "$task_file" "created_date" "$(date '+%Y-%m-%d')"
-        ~/bin/md_prop.sh add "$task_file" "source_file" "$file_rel"
-
-        echo "$task_file"
-        return 0
+${body}" --tags "auto_generated" 2>&1)
+    
+    if [[ $? -eq 0 ]]; then
+        # 作成されたファイル名を抽出（スペースを含むパスに対応）
+        local task_file
+        task_file=$(echo "$result" | grep "タスクを作成しました:" | sed 's/.*タスクを作成しました: //' | xargs -I {} basename "{}")
+        
+        if [[ -n "$task_file" ]]; then
+            # 追加のメタデータを設定
+            locus tags set "$task_file" "assigner" "claude code" >/dev/null 2>&1
+            locus tags set "$task_file" "source_file" "$file_rel" >/dev/null 2>&1
+            
+            echo "$task_file"
+            return 0
+        fi
     fi
 
     return 1
@@ -133,9 +142,15 @@ main() {
             echo "  ✅ テスト対象として判定"
 
             if task_file=$(create_task_file "$file"); then
-                echo "  📝 タスク作成: $task_file"
-                created_tasks+=("$file|$task_file")
-                created_count=$((created_count + 1))
+                if [[ -n "$task_file" ]]; then
+                    echo "  📝 タスク作成: $task_file"
+                    created_tasks+=("$file|$task_file")
+                    created_count=$((created_count + 1))
+                else
+                    echo "  ❌ タスク作成失敗: ファイル名を取得できませんでした"
+                    error_files+=("$file|ファイル名取得エラー")
+                    error_count=$((error_count + 1))
+                fi
             else
                 echo "  ❌ タスク作成失敗"
                 error_files+=("$file|タスク作成失敗")
