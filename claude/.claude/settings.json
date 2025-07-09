@@ -28,7 +28,10 @@
             "Read(~/.claude/scripts)",
             "Read(~/.claude/docs)",
             "Read(~/.claude/state)",
-            "mcp__o3__o3-search"
+            "mcp__o3__o3-search",
+            "Bash(gofmt:*)",
+            "Bash(ls:*)",
+            "Read(~/Documents/Obsidian Vault/tasks)"
         ],
         "deny": []
     },

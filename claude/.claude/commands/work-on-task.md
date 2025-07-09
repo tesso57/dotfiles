@@ -72,6 +72,9 @@ description: |
 
 5. **タスクの実行開始**
    - 最初のタスクを `in_progress` に変更
+   ```bash
+   locus tags set $task_path "status" "in_progress"
+   ```
    - worktree作成の場合は、記載されたコマンドを実行
    - 各タスクを順次実行し、完了したら `completed` に更新
 
@@ -81,11 +84,11 @@ description: |
 
 ### 使用例
 ```
-/work-on-task no9jp/no9-title-server/pkg-adaptor-gateway-dataserverserviceimplgo.md
+/work-on-task tesso/home/pkg-adaptor-gateway-dataserverserviceimplgo.md
 ```
 
 または
 
 ```
-/work-on-task ~/Documents/Obsidian Vault/tasks/no9jp/no9-title-server/pkg-adaptor-gateway-dataserverserviceimplgo.md
+/work-on-task ~/Documents/Obsidian Vault/tasks/tesso/home/pkg-adaptor-gateway-dataserverserviceimplgo.md
 ```

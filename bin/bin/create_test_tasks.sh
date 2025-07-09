@@ -69,17 +69,17 @@ create_task_file() {
     result=$(locus add "$title_for_filename" --body "# ${title}
 
 ${body}" --tags "auto_generated" 2>&1)
-    
+
     if [[ $? -eq 0 ]]; then
         # 作成されたファイル名を抽出（スペースを含むパスに対応）
         local task_file
         task_file=$(echo "$result" | grep "タスクを作成しました:" | sed 's/.*タスクを作成しました: //' | xargs -I {} basename "{}")
-        
+
         if [[ -n "$task_file" ]]; then
             # 追加のメタデータを設定
             locus tags set "$task_file" "assigner" "claude code" >/dev/null 2>&1
             locus tags set "$task_file" "source_file" "$file_rel" >/dev/null 2>&1
-            
+
             echo "$task_file"
             return 0
         fi
