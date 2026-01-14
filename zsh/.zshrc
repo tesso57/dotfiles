@@ -40,6 +40,10 @@ gw() {
 	git worktree add -b $1 ./.git/worktree/${1//\//_} develop
 }
 
+repo() {
+	cd `git rev-parse --show-toplevel`
+}
+
 rpout() {
   git ls-files | while read -r f; do
     MIME_TYPE=$(file -b --mime-type "$f")
@@ -78,7 +82,7 @@ antidote load
 eval "$(zoxide init zsh)"
 eval "$(mise activate zsh)"
 eval "$(starship init zsh)"
-
+eval "$(task --completion zsh)"
 bindkey '^q' fzf-cd
 bindkey '^r' fzf-select-history
 
@@ -145,8 +149,7 @@ alias ll="eza -lauUh --icons=auto --hyperlink"
 alias ls="eza"
 alias cat="bat"
 
-alias claude="~/.claude/local/claude"
-
 # path
 
 export PATH="$HOME/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
