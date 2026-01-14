@@ -37,11 +37,15 @@ cls_img() {
 }
 
 gw() {
-	git worktree add -b $1 ./.git/worktree/${1//\//_} develop
+  git worktree add -b $1 ./.git/worktree/${1//\//_} develop
 }
 
 repo() {
 	cd `git rev-parse --show-toplevel`
+}
+
+cls_branch() {
+  git fetch --prune && git branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git branch -d
 }
 
 rpout() {
@@ -153,3 +157,16 @@ alias cat="bat"
 
 export PATH="$HOME/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
+export GPG_TTY=$(tty)
+
+[[ "$TERM_PROGRAM" == "kiro" ]] && . "$(kiro --locate-shell-integration-path zsh)"
+
+# Added by Antigravity
+export PATH="$HOME/.antigravity/antigravity/bin:$PATH"
+# The following lines have been added by Docker Desktop to enable Docker CLI completions.
+export PATH="$HOME/.docker/bin:$PATH"
+
+fpath=("$HOME/.docker/completions" $fpath)
+autoload -Uz compinit
+compinit
+# End of Docker CLI completions

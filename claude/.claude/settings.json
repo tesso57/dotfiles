@@ -1,63 +1,49 @@
 {
-    "env": {
-        "USE_BUILTIN_RIPGREP": "1"
-    },
-    "permissions": {
-        "allow": [
-            "Bash(npm run lint)",
-            "Bash(npm run test:*)",
-            "Bash(grep:*)",
-            "Bash(find:*)",
-            "Bash(git fetch:*)",
-            "Bash(ls:*)",
-            "Bash(gh pr view:*)",
-            "Bash(gh pr diff:*)",
-            "Bash(go test:*)",
-            "Bash(go build:*)",
-            "Bash(go tool:*)",
-            "Bash(rg:*)",
-            "Bash(cat:*)",
-            "Bash(echo:*)",
-            "Bash(head:*)",
-            "Bash(tail:*)",
-            "Bash(sort:*)",
-            "Bash(wc:*)",
-            "Read(~/.zshrc)",
-            "Read(~/.zprofile)",
-            "Read(~/.claude/templates)",
-            "Read(~/.claude/scripts)",
-            "Read(~/.claude/docs)",
-            "Read(~/.claude/state)",
-            "mcp__o3__o3-search",
-            "Bash(gofmt:*)",
-            "Bash(ls:*)",
-            "Read(~/Documents/Obsidian Vault/tasks)"
-        ],
-        "deny": []
-    },
-    "model": "opus",
-    "hooks": {
-        "Notification": [
-            {
-                "matcher": "",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "~/.claude/scripts/notification.mjs"
-                    }
-                ]
-            }
-        ],
-        "Stop": [
-            {
-                "matcher": "",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": "osascript -e 'display notification \"Claude has stopped\" with title \"Claude\"'"
-                    }
-                ]
-            }
+  "env": {
+    "USE_BUILTIN_RIPGREP": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm run lint)",
+      "Bash(npm run test:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(git fetch:*)",
+      "Bash(ls:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(go test:*)",
+      "Bash(go build:*)",
+      "Bash(go tool:*)",
+      "Bash(rg:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sort:*)",
+      "Bash(wc:*)",
+      "Read(~/.zshrc)",
+      "Read(~/.zprofile)",
+      "Read(~/.claude/templates)",
+      "Read(~/.claude/scripts)",
+      "Read(~/.claude/docs)",
+      "Read(~/.claude/state)",
+      "mcp__o3__o3-search",
+      "Bash(gofmt:*)",
+      "Bash(ls:*)",
+      "Read(~/Documents/Obsidian Vault/tasks)"
+    ],
+    "deny": []
+  },
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/notification.mjs"
+          }
         ]
       }
     ],
@@ -72,5 +58,22 @@
         ]
       }
     ]
+<<<<<<< Updated upstream
+=======
+  },
+  "enabledPlugins": {
+    "swift-lsp@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "serena@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "gopls-lsp@claude-plugins-official": true,
+    "github@claude-plugins-official": true
+  },
+  "alwaysThinkingEnabled": true,
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline-command.sh"
+>>>>>>> Stashed changes
   }
 }

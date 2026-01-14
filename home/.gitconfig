@@ -6,6 +6,7 @@ smudge = git-lfs smudge -- %f
 [user]
 name = tesso57
 email = mail@tesso.dev
+signingkey = 653C207B96A64585
 [core]
 editor = vim
 [push]
@@ -20,3 +21,7 @@ path = ~/.knowledgework.gitconfig
 
 [includeIf "gitdir:~/Documents/repos/no9jp/"]
 path = ~/.no9jp.gitconfig
+[commit]
+	gpgsign = true
+[gpg]
+	program = gpg

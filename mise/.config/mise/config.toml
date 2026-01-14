@@ -1,5 +1,7 @@
 [tools]
+aws-sam = "latest"
 buf = "latest"
+bun = "latest"
 "cargo:bat" = "latest"
 "cargo:eza" = "latest"
 "cargo:fd-find" = "latest"
