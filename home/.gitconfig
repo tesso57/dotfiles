@@ -6,7 +6,6 @@ smudge = git-lfs smudge -- %f
 [user]
 name = tesso57
 email = mail@tesso.dev
-signingkey = 653C207B96A64585
 [core]
 editor = vim
 [push]
@@ -14,8 +13,9 @@ autoSetupRemote = true
 [init]
 defaultBranch = main
 [color]
-ui=auto
-
+  ui=auto
+[include]
+  path = ~/.gitconfig.local
 [includeIf "gitdir:~/Documents/repos/knowledgework/"]
 path = ~/.knowledgework.gitconfig
 

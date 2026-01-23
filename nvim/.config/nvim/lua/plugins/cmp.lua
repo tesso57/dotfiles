@@ -17,6 +17,20 @@ return {
       local luasnip = require("luasnip")
       require("luasnip.loaders.from_vscode").lazy_load()
 
+      local function copilot_accept()
+        local ok, accept = pcall(vim.fn["copilot#Accept"], "")
+        if ok and accept ~= "" then
+          vim.api.nvim_feedkeys(accept, "i", true)
+          return true
+        end
+        return false
+      end
+
+      local function copilot_visible()
+        local ok, suggestion = pcall(vim.fn["copilot#GetDisplayedSuggestion"])
+        return ok and suggestion and suggestion.text and suggestion.text ~= ""
+      end
+
       cmp.setup({
         snippet = {
           expand = function(args)
@@ -28,8 +42,8 @@ return {
           ["<CR>"] = cmp.mapping.confirm({ select = true }),
 
           ["<Tab>"] = cmp.mapping(function(fallback)
-            if cmp.visible() then
-              cmp.select_next_item()
+            if copilot_visible() and copilot_accept() then
+              return
             elseif luasnip.expand_or_jumpable() then
               luasnip.expand_or_jump()
             else
@@ -71,4 +85,3 @@ return {
     end,
   },
 }
-

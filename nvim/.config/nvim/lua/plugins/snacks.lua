@@ -69,9 +69,45 @@ return {
       -- 文字列検索（Grep）
       { "<leader>sb", function() Snacks.picker.lines() end, desc = "バッファ内の行" },
       { "<leader>sB", function() Snacks.picker.grep_buffers() end, desc = "開いているバッファを検索" },
-      { "<leader>sg", function() Snacks.picker.grep() end, desc = "文字列検索（Grep）" },
-      { "<leader>sw", function() Snacks.picker.grep_word() end, desc = "選択範囲または単語を検索", mode = { "n", "x" } },
+      {
+        "<leader>sg",
+        function()
+          Snacks.picker.grep({
+            exclude = { "node_modules", "vendor", ".venv", ".git" },
 
+            args = {
+              "--glob", "!**/go/pkg/mod/**",
+              "--glob", "!**/gen/**",
+              "--glob", "!**/*mock/**",
+              "--glob", "!**/*.ts",
+              "--glob", "!**/*.tsx",
+              "--glob", "!**/z-playground/**",
+            },
+          })
+        end,
+        desc = "文字列検索（Grep）"
+      },
+      {
+        "<leader>sw",
+        function()
+          Snacks.picker.grep_word({
+            Snacks.picker.grep({
+              exclude = { "node_modules", "vendor", ".venv", ".git" },
+
+              args = {
+                "--glob", "!**/go/pkg/mod/**",
+                "--glob", "!**/gen/**",
+                "--glob", "!**/*mock/**",
+                "--glob", "!**/*.ts",
+                "--glob", "!**/*.tsx",
+                "--glob", "!**/z-playground/**",
+              },
+            })
+          })
+        end,
+        desc = "選択範囲または単語を検索",
+        mode = { "n", "x" }
+      },
       -- 検索/参照（Search）
       { '<leader>s"', function() Snacks.picker.registers() end, desc = "レジスタ" },
       { '<leader>s/', function() Snacks.picker.search_history() end, desc = "検索履歴" },
@@ -107,20 +143,20 @@ return {
       { "<leader>sS", function() Snacks.picker.lsp_workspace_symbols() end, desc = "ワークスペースシンボル" },
 
       -- その他
-      { "<leader>z",  function() Snacks.zen() end, desc = "Zenモード切替" },
-      { "<leader>Z",  function() Snacks.zen.zoom() end, desc = "ズーム切替" },
-      { "<leader>.",  function() Snacks.scratch() end, desc = "スクラッチバッファ切替" },
-      { "<leader>S",  function() Snacks.scratch.select() end, desc = "スクラッチバッファ選択" },
+      { "<leader>z", function() Snacks.zen() end, desc = "Zenモード切替" },
+      { "<leader>Z", function() Snacks.zen.zoom() end, desc = "ズーム切替" },
+      { "<leader>.", function() Snacks.scratch() end, desc = "スクラッチバッファ切替" },
+      { "<leader>S", function() Snacks.scratch.select() end, desc = "スクラッチバッファ選択" },
 
       { "<leader>bd", function() Snacks.bufdelete() end, desc = "バッファ削除" },
       { "<leader>cR", function() Snacks.rename.rename_file() end, desc = "ファイル名変更" },
       { "<leader>gB", function() Snacks.gitbrowse() end, desc = "Gitをブラウザで開く", mode = { "n", "v" } },
       { "<leader>gg", function() Snacks.lazygit() end, desc = "LazyGit" },
       { "<leader>un", function() Snacks.notifier.hide() end, desc = "通知を全て消す" },
-      { "<c-/>",      function() Snacks.terminal() end, desc = "ターミナル切替" },
-      { "<c-_>",      function() Snacks.terminal() end, desc = "which_key_ignore" },
-      { "]]",         function() Snacks.words.jump(vim.v.count1) end, desc = "次の参照", mode = { "n", "t" } },
-      { "[[",         function() Snacks.words.jump(-vim.v.count1) end, desc = "前の参照", mode = { "n", "t" } },
+      { "<c-/>", function() Snacks.terminal() end, desc = "ターミナル切替" },
+      { "<c-_>", function() Snacks.terminal() end, desc = "which_key_ignore" },
+      { "]]", function() Snacks.words.jump(vim.v.count1) end, desc = "次の参照", mode = { "n", "t" } },
+      { "[[", function() Snacks.words.jump(-vim.v.count1) end, desc = "前の参照", mode = { "n", "t" } },
 
       {
         "<leader>N",
@@ -143,40 +179,41 @@ return {
     },
 
     init = function()
-       vim.api.nvim_create_autocmd("User", {
-         pattern = "VeryLazy",
-         callback = function()
-           -- Setup some globals for debugging (lazy-loaded)
-           _G.dd = function(...)
-             Snacks.debug.inspect(...)
-           end
-           _G.bt = function()
-             Snacks.debug.backtrace()
-           end
+      vim.api.nvim_create_autocmd("User", {
+        pattern = "VeryLazy",
+        callback = function()
+          -- Setup some globals for debugging (lazy-loaded)
+          _G.dd = function(...)
+            Snacks.debug.inspect(...)
+          end
+          _G.bt = function()
+            Snacks.debug.backtrace()
+          end
 
-           -- Override print to use snacks for `:=` command
-           if vim.fn.has("nvim-0.11") == 1 then
-             vim._print = function(_, ...)
-               dd(...)
-             end
-           else
-             vim.print = _G.dd
-           end
+          -- Override print to use snacks for `:=` command
+          if vim.fn.has("nvim-0.11") == 1 then
+            vim._print = function(_, ...)
+              dd(...)
+            end
+          else
+            vim.print = _G.dd
+          end
 
-           -- Create some toggle mappings
-           Snacks.toggle.option("spell", { name = "Spelling" }):map("<leader>us")
-           Snacks.toggle.option("wrap", { name = "Wrap" }):map("<leader>uw")
-           Snacks.toggle.option("relativenumber", { name = "Relative Number" }):map("<leader>uL")
-           Snacks.toggle.diagnostics():map("<leader>ud")
-           Snacks.toggle.line_number():map("<leader>ul")
-           Snacks.toggle.option("conceallevel", { off = 0, on = vim.o.conceallevel > 0 and vim.o.conceallevel or 2 }):map("<leader>uc")
-           Snacks.toggle.treesitter():map("<leader>uT")
-           Snacks.toggle.option("background", { off = "light", on = "dark", name = "Dark Background" }):map("<leader>ub")
-           Snacks.toggle.inlay_hints():map("<leader>uh")
-           Snacks.toggle.indent():map("<leader>ug")
-           Snacks.toggle.dim():map("<leader>uD")
-         end,
-       })
+          -- Create some toggle mappings
+          Snacks.toggle.option("spell", { name = "Spelling" }):map("<leader>us")
+          Snacks.toggle.option("wrap", { name = "Wrap" }):map("<leader>uw")
+          Snacks.toggle.option("relativenumber", { name = "Relative Number" }):map("<leader>uL")
+          Snacks.toggle.diagnostics():map("<leader>ud")
+          Snacks.toggle.line_number():map("<leader>ul")
+          Snacks.toggle.option("conceallevel", { off = 0, on = vim.o.conceallevel > 0 and vim.o.conceallevel or 2 }):map(
+          "<leader>uc")
+          Snacks.toggle.treesitter():map("<leader>uT")
+          Snacks.toggle.option("background", { off = "light", on = "dark", name = "Dark Background" }):map("<leader>ub")
+          Snacks.toggle.inlay_hints():map("<leader>uh")
+          Snacks.toggle.indent():map("<leader>ug")
+          Snacks.toggle.dim():map("<leader>uD")
+        end,
+      })
     end,
   }
 }
