@@ -10,7 +10,7 @@ return {
       "neovim/nvim-lspconfig",
     },
     opts = {
-      ensure_installed = { "gopls", "lua_ls" },
+      ensure_installed = { "gopls", "lua_ls", "marksman" },
       -- mason-lspconfig はデフォルトで「Masonで入れたサーバを自動enable」するので、
       -- ここでは明示的に enable したい -> OFF にしておく
       automatic_enable = false,
@@ -49,6 +49,13 @@ return {
         },
       })
       vim.lsp.enable("gopls")
+
+      -- =========================
+      -- Markdown: marksman
+      -- =========================
+      vim.lsp.enable({
+        "marksman"
+      })
 
       -- =========================
       -- Lua: lua_ls
@@ -152,4 +159,3 @@ return {
     end,
   }
 }
-

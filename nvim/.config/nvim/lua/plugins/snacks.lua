@@ -19,7 +19,12 @@ return {
       --
       picker = {
         enabled = true,
-        ui_select = true
+        ui_select = true,
+        sources = {
+          explorer = {
+            jump = { close = true },
+          },
+        },
       },
       quickfile = { enabled = true },
       scope = { enabled = true },
