@@ -1,0 +1,237 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# cmux-delegate: AI エージェント委任ロジック
+# cmux の IPC プリミティブを組み合わせて、別ペインでエージェントを起動・監視・結果収集する
+
+SCRIPT_NAME="$(basename "$0")"
+DEFAULT_TIMEOUT=600
+
+usage() {
+  cat <<EOF
+Usage: $SCRIPT_NAME <subcommand> [args...]
+
+Subcommands:
+  start <agent> <prompt>           ペイン作成 + エージェント起動
+  wait <task_id> [timeout]         完了シグナルをブロック待ち (default: ${DEFAULT_TIMEOUT}s)
+  read <task_id> [surface_ref]     結果読取
+  status <task_id> <msg> [icon]    サイドバーステータス更新
+  cleanup <task_id> [surface_ref]  一時ファイル削除 + ペイン閉鎖（任意）
+
+Agents:
+  claude    Claude Code (インタラクティブ)
+  codex     Codex CLI (インタラクティブ)
+  gemini    Gemini CLI ワンショット (gemini -p)
+  cmd       任意コマンド ワンショット
+EOF
+  exit 1
+}
+
+generate_task_id() {
+  echo "delegate-$(date +%s)-$$"
+}
+
+# --- start ---
+cmd_start() {
+  local agent="${1:?agent type required (claude/codex/gemini/cmd)}"
+  local prompt="${2:?prompt required}"
+  local task_id
+  task_id="$(generate_task_id)"
+
+  local prompt_file="/tmp/${task_id}.prompt"
+  local launcher="/tmp/${task_id}.sh"
+  local outfile="/tmp/${task_id}.out"
+
+  # プロンプトをファイルに書き出し（エスケープ問題を回避）
+  printf '%s' "$prompt" > "$prompt_file"
+
+  # ランチャースクリプト生成
+  case "$agent" in
+    claude)
+      cat > "$launcher" << 'LAUNCHER_EOF'
+#!/bin/bash
+set -euo pipefail
+TASK_ID="__TASK_ID__"
+PROMPT=$(cat "/tmp/${TASK_ID}.prompt")
+claude "$PROMPT" \
+  --append-system-prompt "タスク完了後、最終アクションとして以下のBashコマンドを実行してください:
+cmux wait-for -S ${TASK_ID}-done"
+LAUNCHER_EOF
+      ;;
+    codex)
+      cat > "$launcher" << 'LAUNCHER_EOF'
+#!/bin/bash
+TASK_ID="__TASK_ID__"
+SURFACE_REF="__SURFACE_REF__"
+PROMPT=$(cat "/tmp/${TASK_ID}.prompt")
+
+# バックグラウンドで codex の応答完了をポーリング
+(
+  sleep 15  # codex 起動 + 最初の応答を待つ
+  while true; do
+    screen=$(cmux read-screen --surface "$SURFACE_REF" --lines 5 2>/dev/null || true)
+    # codex が入力待ち（› プロンプト表示 + Working でない）なら完了
+    if echo "$screen" | grep -q '›' && ! echo "$screen" | grep -q 'Working'; then
+      cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true
+      break
+    fi
+    sleep 3
+  done
+) &
+POLL_PID=$!
+
+codex "$PROMPT" || true
+
+# codex が終了した場合もシグナルを送信
+kill $POLL_PID 2>/dev/null || true
+cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true
+LAUNCHER_EOF
+      ;;
+    gemini)
+      cat > "$launcher" << 'LAUNCHER_EOF'
+#!/bin/bash
+set -euo pipefail
+TASK_ID="__TASK_ID__"
+PROMPT=$(cat "/tmp/${TASK_ID}.prompt")
+gemini -p "$PROMPT" 2>&1 | tee "/tmp/${TASK_ID}.out"
+EXIT_CODE=${PIPESTATUS[0]}
+cmux wait-for -S "${TASK_ID}-done"
+exit $EXIT_CODE
+LAUNCHER_EOF
+      ;;
+    cmd)
+      cat > "$launcher" << 'LAUNCHER_EOF'
+#!/bin/bash
+set -euo pipefail
+TASK_ID="__TASK_ID__"
+CMD=$(cat "/tmp/${TASK_ID}.prompt")
+eval "$CMD" 2>&1 | tee "/tmp/${TASK_ID}.out"
+EXIT_CODE=${PIPESTATUS[0]}
+cmux wait-for -S "${TASK_ID}-done"
+exit $EXIT_CODE
+LAUNCHER_EOF
+      ;;
+    *)
+      echo "Error: unknown agent type '$agent'. Use claude/codex/gemini/cmd." >&2
+      exit 1
+      ;;
+  esac
+
+  # cmux で新ペインを作成
+  local pane_output
+  pane_output="$(cmux new-split right)"
+  local surface_ref
+  # 出力形式: "OK surface:NN workspace:NN"
+  surface_ref="$(echo "$pane_output" | grep -o 'surface:[0-9]*' | head -1)"
+
+  if [[ -z "$surface_ref" ]]; then
+    echo "Error: failed to extract surface ref from: $pane_output" >&2
+    exit 1
+  fi
+
+  # プレースホルダーを実際の値で置換
+  sed -i '' "s/__TASK_ID__/$task_id/g" "$launcher"
+  sed -i '' "s/__SURFACE_REF__/$surface_ref/g" "$launcher"
+  chmod +x "$launcher"
+
+  # ランチャーを送信して実行
+  cmux send --surface "$surface_ref" "/tmp/${task_id}.sh"
+  cmux send-key --surface "$surface_ref" Enter
+
+  # ステータス更新
+  cmux set-status "$task_id" "Running ($agent)" --icon "▶️" 2>/dev/null || true
+
+  # 結果を出力
+  echo "TASK_ID=$task_id"
+  echo "SURFACE_REF=$surface_ref"
+}
+
+# --- wait ---
+cmd_wait() {
+  local task_id="${1:?task_id required}"
+  local timeout="${2:-$DEFAULT_TIMEOUT}"
+
+  cmux set-status "$task_id" "Waiting..." --icon "⏳" 2>/dev/null || true
+
+  # 完了シグナルをブロック待ち
+  if cmux wait-for -G "${task_id}-done" --timeout "$timeout"; then
+    cmux set-status "$task_id" "Done" --icon "✅" 2>/dev/null || true
+    echo "OK"
+  else
+    cmux set-status "$task_id" "Timeout" --icon "⏰" 2>/dev/null || true
+    echo "TIMEOUT" >&2
+    return 1
+  fi
+}
+
+# --- read ---
+cmd_read() {
+  local task_id="${1:?task_id required}"
+  local surface_ref="${2:-}"
+  local outfile="/tmp/${task_id}.out"
+
+  # まず一時ファイルから読む（gemini/cmd）
+  if [[ -f "$outfile" ]]; then
+    cat "$outfile"
+    return 0
+  fi
+
+  # ファイルがなければ read-screen（claude/codex）
+  if [[ -n "$surface_ref" ]]; then
+    cmux read-screen --surface "$surface_ref" --scrollback --lines 200
+    return 0
+  fi
+
+  echo "Error: no output file found and no surface_ref provided" >&2
+  return 1
+}
+
+# --- status ---
+cmd_status() {
+  local task_id="${1:?task_id required}"
+  local msg="${2:?message required}"
+  local icon="${3:-📋}"
+
+  cmux set-status "$task_id" "$msg" --icon "$icon"
+}
+
+# --- cleanup ---
+cmd_cleanup() {
+  local task_id="${1:?task_id required}"
+  local surface_ref="${2:-}"
+
+  # 一時ファイル削除
+  rm -f "/tmp/${task_id}.prompt" "/tmp/${task_id}.sh" "/tmp/${task_id}.out"
+
+  # ステータスクリア
+  cmux clear-status "$task_id" 2>/dev/null || true
+
+  # ペイン閉鎖（surface_ref が指定された場合）
+  if [[ -n "$surface_ref" ]]; then
+    cmux send --surface "$surface_ref" "exit"
+    cmux send-key --surface "$surface_ref" Enter 2>/dev/null || true
+  fi
+
+  echo "Cleaned up $task_id"
+}
+
+# --- main ---
+if [[ $# -lt 1 ]]; then
+  usage
+fi
+
+subcommand="$1"
+shift
+
+case "$subcommand" in
+  start)   cmd_start "$@" ;;
+  wait)    cmd_wait "$@" ;;
+  read)    cmd_read "$@" ;;
+  status)  cmd_status "$@" ;;
+  cleanup) cmd_cleanup "$@" ;;
+  -h|--help|help) usage ;;
+  *)
+    echo "Error: unknown subcommand '$subcommand'" >&2
+    usage
+    ;;
+esac
