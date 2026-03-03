@@ -25,3 +25,5 @@ path = ~/.no9jp.gitconfig
 	gpgsign = true
 [gpg]
 	program = gpg
+[maintenance]
+	repo = /Users/takumi.shinozaki/Documents/repos/knowledgework/knowledgework
