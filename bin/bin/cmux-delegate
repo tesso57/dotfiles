@@ -5,18 +5,21 @@ set -euo pipefail
 # cmux の IPC プリミティブを組み合わせて、別ペインでエージェントを起動・監視・結果収集する
 
 SCRIPT_NAME="$(basename "$0")"
-DEFAULT_TIMEOUT=600
+DEFAULT_TIMEOUT=900
 
 usage() {
   cat <<EOF
 Usage: $SCRIPT_NAME <subcommand> [args...]
 
 Subcommands:
-  start <agent> <prompt>           ペイン作成 + エージェント起動
-  wait <task_id> [timeout]         完了シグナルをブロック待ち (default: ${DEFAULT_TIMEOUT}s)
-  read <task_id> [surface_ref]     結果読取
-  status <task_id> <msg> [icon]    サイドバーステータス更新
-  cleanup <task_id> [surface_ref]  一時ファイル削除 + ペイン閉鎖（任意）
+  start <agent> <prompt>                          ペイン作成 + エージェント起動
+  wait <task_id> [timeout]                        完了シグナルをブロック待ち (default: ${DEFAULT_TIMEOUT}s)
+  wait-poll <task_id> [timeout] [interval] [surface_ref] [agent_type]
+                                                  ポーリング待機 + 進捗出力
+  probe <task_id> [surface_ref] [agent_type]      エージェント状態を判定 (completed/active/idle/waiting/frozen/stalled/unknown)
+  read <task_id> [surface_ref] [lines]            結果読取
+  status <task_id> <msg> [icon]                   サイドバーステータス更新
+  cleanup <task_id> [surface_ref] [grace_period]  一時ファイル削除 + ペイン閉鎖（任意）
 
 Agents:
   claude    Claude Code (インタラクティブ)
@@ -61,21 +64,36 @@ LAUNCHER_EOF
     codex)
       cat > "$launcher" << 'LAUNCHER_EOF'
 #!/bin/bash
+set -euo pipefail
 TASK_ID="__TASK_ID__"
 SURFACE_REF="__SURFACE_REF__"
 PROMPT=$(cat "/tmp/${TASK_ID}.prompt")
 
-# バックグラウンドで codex の応答完了をポーリング
+# バックグラウンドで codex の応答完了をポーリング（一次検出）
+# 設計意図: ランチャー内ポーリング = 一次検出（リアルタイム監視）
+#           probe コマンド = 二次検出（外部からのフォールバック確認）
+# 誤検知防止: IDLE_THRESHOLD 回連続で idle パターンを検出してから done シグナルを送信
 (
-  sleep 15  # codex 起動 + 最初の応答を待つ
+  INITIAL_WAIT=${CODEX_INITIAL_WAIT:-30}
+  sleep "$INITIAL_WAIT"
+  idle_count=0
+  IDLE_THRESHOLD=3
   while true; do
-    screen=$(cmux read-screen --surface "$SURFACE_REF" --lines 5 2>/dev/null || true)
-    # codex が入力待ち（› プロンプト表示 + Working でない）なら完了
-    if echo "$screen" | grep -q '›' && ! echo "$screen" | grep -q 'Working'; then
-      cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true
-      break
+    screen=$(cmux read-screen --surface "$SURFACE_REF" --lines 15 2>/dev/null || true)
+    # 権限確認待ち検出: Allow プロンプトや y/n 確認が表示されている場合は idle ではない
+    if echo "$screen" | grep -qiE '(Allow .+\?|[Yy]/[Nn]|approve|permission)'; then
+      idle_count=0
+    # codex が入力待ち（› プロンプト表示 + Working でない）なら idle カウント加算
+    elif echo "$screen" | grep -q '›' && ! echo "$screen" | grep -q 'Working'; then
+      idle_count=$((idle_count + 1))
+      if [[ $idle_count -ge $IDLE_THRESHOLD ]]; then
+        cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true
+        break
+      fi
+    else
+      idle_count=0
     fi
-    sleep 3
+    sleep 5
   done
 ) &
 POLL_PID=$!
@@ -83,7 +101,7 @@ POLL_PID=$!
 codex "$PROMPT" || true
 
 # codex が終了した場合もシグナルを送信
-kill $POLL_PID 2>/dev/null || true
+kill "$POLL_PID" 2>/dev/null || true
 cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true
 LAUNCHER_EOF
       ;;
@@ -130,8 +148,7 @@ LAUNCHER_EOF
   fi
 
   # プレースホルダーを実際の値で置換
-  sed -i '' "s/__TASK_ID__/$task_id/g" "$launcher"
-  sed -i '' "s/__SURFACE_REF__/$surface_ref/g" "$launcher"
+  sed -i '' -e "s/__TASK_ID__/$task_id/g" -e "s/__SURFACE_REF__/$surface_ref/g" "$launcher"
   chmod +x "$launcher"
 
   # ランチャーを送信して実行
@@ -144,6 +161,127 @@ LAUNCHER_EOF
   # 結果を出力
   echo "TASK_ID=$task_id"
   echo "SURFACE_REF=$surface_ref"
+}
+
+# --- probe ---
+# エージェントが動作中か・フリーズしているかを判定する
+cmd_probe() {
+  local task_id="${1:?task_id required}"
+  local surface_ref="${2:-}"
+  local agent_type="${3:-}"
+  local outfile="/tmp/${task_id}.out"
+
+  # 1. done シグナル確認
+  if cmux wait-for -G "${task_id}-done" --timeout 0 2>/dev/null; then
+    echo "STATUS=completed"
+    return 0
+  fi
+
+  # 2. gemini/cmd: /tmp ファイルのサイズ変化で判定
+  if [[ -f "$outfile" ]]; then
+    local size1 size2
+    size1=$(wc -c < "$outfile" 2>/dev/null || echo "0")
+    sleep 3
+    size2=$(wc -c < "$outfile" 2>/dev/null || echo "0")
+    if [[ "$size1" != "$size2" ]]; then
+      echo "STATUS=active"
+    else
+      echo "STATUS=stalled"
+    fi
+    return 0
+  fi
+
+  # 3. claude/codex: screen の変化で判定
+  # 設計意図: probe は二次検出（フォールバック）。ランチャー内ポーリングが一次検出。
+  # probe は wait-poll から呼ばれるため、ランチャーが検出できなかった場合の補完として機能する。
+  if [[ -n "$surface_ref" ]]; then
+    local screen1 screen2
+    screen1=$(cmux read-screen --surface "$surface_ref" --lines 15 2>/dev/null || true)
+
+    # 権限確認待ち検出（claude/codex 共通）
+    # Allow プロンプトや y/n 確認が表示されている場合は waiting を返す。
+    # frozen/idle より優先して判定し、権限待ちを誤って frozen 扱いしない。
+    if echo "$screen1" | grep -qiE '(Allow .+\?|[Yy]/[Nn]|approve|permission)'; then
+      echo "STATUS=waiting"
+      return 0
+    fi
+
+    # codex 固有: › + Working なし → idle（完了とみなせる）
+    # 注意: probe は単発チェックのため、ランチャー側の安定性閾値（3回連続）とは異なる。
+    # wait-poll が interval ごとに probe を呼ぶため、複数回の idle 検出で信頼度が担保される。
+    if [[ "$agent_type" == "codex" ]]; then
+      if echo "$screen1" | grep -q '›' && ! echo "$screen1" | grep -q 'Working'; then
+        echo "STATUS=idle"
+        return 0
+      fi
+    fi
+
+    sleep 5
+    screen2=$(cmux read-screen --surface "$surface_ref" --lines 15 2>/dev/null || true)
+
+    if [[ "$screen1" == "$screen2" ]]; then
+      echo "STATUS=frozen"
+    else
+      echo "STATUS=active"
+    fi
+    return 0
+  fi
+
+  echo "STATUS=unknown"
+  return 0
+}
+
+# --- wait-poll ---
+# interval 秒ごとにポーリングしながら待機し、進捗を出力する
+cmd_wait_poll() {
+  local task_id="${1:?task_id required}"
+  local total_timeout="${2:-$DEFAULT_TIMEOUT}"
+  local interval="${3:-60}"
+  local surface_ref="${4:-}"
+  local agent_type="${5:-}"
+  local start_seconds=$SECONDS
+
+  cmux set-status "$task_id" "Polling..." --icon "⏳" 2>/dev/null || true
+
+  while [[ $((SECONDS - start_seconds)) -lt $total_timeout ]]; do
+    local elapsed=$((SECONDS - start_seconds))
+
+    # probe で状態確認
+    local status_line
+    status_line=$(cmd_probe "$task_id" "$surface_ref" "$agent_type" 2>/dev/null || true)
+    local status="${status_line#STATUS=}"
+
+    echo "PROGRESS elapsed=${elapsed} status=${status}"
+
+    case "$status" in
+      completed|idle)
+        cmux set-status "$task_id" "Done" --icon "✅" 2>/dev/null || true
+        echo "OK"
+        return 0
+        ;;
+      frozen)
+        cmux set-status "$task_id" "Frozen" --icon "🥶" 2>/dev/null || true
+        echo "FROZEN" >&2
+        return 2
+        ;;
+      waiting)
+        # 権限確認待ち — タイムアウトせず積極的に待機を継続
+        cmux set-status "$task_id" "Permission wait" --icon "🔑" 2>/dev/null || true
+        ;;
+    esac
+
+    # interval 秒待つか、done シグナルが来るかのどちらか
+    if cmux wait-for -G "${task_id}-done" --timeout "$interval" 2>/dev/null; then
+      cmux set-status "$task_id" "Done" --icon "✅" 2>/dev/null || true
+      echo "PROGRESS elapsed=$((SECONDS - start_seconds)) status=completed"
+      echo "OK"
+      return 0
+    fi
+  done
+
+  cmux set-status "$task_id" "Timeout" --icon "⏰" 2>/dev/null || true
+  echo "TIMEOUT" >&2
+  return 1
 }
 
 # --- wait ---
@@ -168,6 +306,7 @@ cmd_wait() {
 cmd_read() {
   local task_id="${1:?task_id required}"
   local surface_ref="${2:-}"
+  local lines="${3:-200}"
   local outfile="/tmp/${task_id}.out"
 
   # まず一時ファイルから読む（gemini/cmd）
@@ -178,7 +317,7 @@ cmd_read() {
 
   # ファイルがなければ read-screen（claude/codex）
   if [[ -n "$surface_ref" ]]; then
-    cmux read-screen --surface "$surface_ref" --scrollback --lines 200
+    cmux read-screen --surface "$surface_ref" --scrollback --lines "$lines"
     return 0
   fi
 
@@ -199,6 +338,12 @@ cmd_status() {
 cmd_cleanup() {
   local task_id="${1:?task_id required}"
   local surface_ref="${2:-}"
+  local grace_period="${3:-0}"
+
+  # grace_period が指定されていれば待つ
+  if [[ "$grace_period" =~ ^[0-9]+$ ]] && [[ "$grace_period" -gt 0 ]]; then
+    sleep "$grace_period"
+  fi
 
   # 一時ファイル削除
   rm -f "/tmp/${task_id}.prompt" "/tmp/${task_id}.sh" "/tmp/${task_id}.out"
@@ -224,11 +369,13 @@ subcommand="$1"
 shift
 
 case "$subcommand" in
-  start)   cmd_start "$@" ;;
-  wait)    cmd_wait "$@" ;;
-  read)    cmd_read "$@" ;;
-  status)  cmd_status "$@" ;;
-  cleanup) cmd_cleanup "$@" ;;
+  start)     cmd_start "$@" ;;
+  wait)      cmd_wait "$@" ;;
+  wait-poll) cmd_wait_poll "$@" ;;
+  probe)     cmd_probe "$@" ;;
+  read)      cmd_read "$@" ;;
+  status)    cmd_status "$@" ;;
+  cleanup)   cmd_cleanup "$@" ;;
   -h|--help|help) usage ;;
   *)
     echo "Error: unknown subcommand '$subcommand'" >&2
