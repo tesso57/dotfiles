@@ -12,14 +12,16 @@ usage() {
 Usage: $SCRIPT_NAME <subcommand> [args...]
 
 Subcommands:
-  start <agent> <prompt>                          ペイン作成 + エージェント起動
-  wait <task_id> [timeout]                        完了シグナルをブロック待ち (default: ${DEFAULT_TIMEOUT}s)
+  start <agent> <prompt>                          ワークスペース作成 + エージェント起動
+  wait <task_id> [timeout] [surface_ref] [agent_type]
+                                                  完了シグナルをブロック待ち (default: ${DEFAULT_TIMEOUT}s)
+                                                  タイムアウト時は probe で 1 回フォールバック
   wait-poll <task_id> [timeout] [interval] [surface_ref] [agent_type]
-                                                  ポーリング待機 + 進捗出力
+                                                  ポーリング待機 + 進捗出力 (レガシー)
   probe <task_id> [surface_ref] [agent_type]      エージェント状態を判定 (completed/active/idle/waiting/frozen/stalled/unknown)
-  read <task_id> [surface_ref] [lines]            結果読取
+  read <task_id> [surface_ref] [lines]            結果読取 (.result → .out → screen の優先順)
   status <task_id> <msg> [icon]                   サイドバーステータス更新
-  cleanup <task_id> [surface_ref] [grace_period]  一時ファイル削除 + ペイン閉鎖（任意）
+  cleanup <task_id> [surface_ref] [grace_period]  一時ファイル削除 + ペイン閉鎖
 
 Agents:
   claude    Claude Code (インタラクティブ)
@@ -55,10 +57,17 @@ cmd_start() {
 #!/bin/bash
 set -euo pipefail
 TASK_ID="__TASK_ID__"
+# EXIT トラップで確実に完了通知（ペインが閉じられても発火する）
+trap 'touch "/tmp/${TASK_ID}.done"; cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true' EXIT
 PROMPT=$(cat "/tmp/${TASK_ID}.prompt")
 claude "$PROMPT" \
-  --append-system-prompt "タスク完了後、最終アクションとして以下のBashコマンドを実行してください:
-cmux wait-for -S ${TASK_ID}-done"
+  --permission-mode acceptEdits \
+  --add-dir /tmp \
+  --append-system-prompt "タスク完了後、最終アクションとして結果のサマリーを以下のBashコマンドで書き出してください:
+cat > /tmp/${TASK_ID}.result << 'RESULT_EOF'
+（ここに結果サマリーを記述）
+RESULT_EOF
+サマリーには完了したこと、変更内容、重要な発見を含めてください。長さ制限はありません。" || true
 LAUNCHER_EOF
       ;;
     codex)
@@ -66,43 +75,19 @@ LAUNCHER_EOF
 #!/bin/bash
 set -euo pipefail
 TASK_ID="__TASK_ID__"
-SURFACE_REF="__SURFACE_REF__"
+# EXIT トラップで確実に完了通知（ペインが閉じられても発火する）
+trap 'touch "/tmp/${TASK_ID}.done"; cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true' EXIT
 PROMPT=$(cat "/tmp/${TASK_ID}.prompt")
 
-# バックグラウンドで codex の応答完了をポーリング（一次検出）
-# 設計意図: ランチャー内ポーリング = 一次検出（リアルタイム監視）
-#           probe コマンド = 二次検出（外部からのフォールバック確認）
-# 誤検知防止: IDLE_THRESHOLD 回連続で idle パターンを検出してから done シグナルを送信
-(
-  INITIAL_WAIT=${CODEX_INITIAL_WAIT:-30}
-  sleep "$INITIAL_WAIT"
-  idle_count=0
-  IDLE_THRESHOLD=3
-  while true; do
-    screen=$(cmux read-screen --surface "$SURFACE_REF" --lines 15 2>/dev/null || true)
-    # 権限確認待ち検出: Allow プロンプトや y/n 確認が表示されている場合は idle ではない
-    if echo "$screen" | grep -qiE '(Allow .+\?|[Yy]/[Nn]|approve|permission)'; then
-      idle_count=0
-    # codex が入力待ち（› プロンプト表示 + Working でない）なら idle カウント加算
-    elif echo "$screen" | grep -q '›' && ! echo "$screen" | grep -q 'Working'; then
-      idle_count=$((idle_count + 1))
-      if [[ $idle_count -ge $IDLE_THRESHOLD ]]; then
-        cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true
-        break
-      fi
-    else
-      idle_count=0
-    fi
-    sleep 5
-  done
-) &
-POLL_PID=$!
+# 結果ファイル書き出し指示をプロンプト末尾に追加
+FULL_PROMPT="${PROMPT}
 
-codex "$PROMPT" || true
+[IMPORTANT] タスク完了後、結果のサマリーを以下のBashコマンドで /tmp/${TASK_ID}.result に書き出してください:
+cat > /tmp/${TASK_ID}.result << 'RESULT_EOF'
+（ここに結果サマリーを記述）
+RESULT_EOF"
 
-# codex が終了した場合もシグナルを送信
-kill "$POLL_PID" 2>/dev/null || true
-cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true
+codex "$FULL_PROMPT" || true
 LAUNCHER_EOF
       ;;
     gemini)
@@ -110,11 +95,10 @@ LAUNCHER_EOF
 #!/bin/bash
 set -euo pipefail
 TASK_ID="__TASK_ID__"
+# EXIT トラップで確実に完了通知（ペインが閉じられても発火する）
+trap 'touch "/tmp/${TASK_ID}.done"; cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true' EXIT
 PROMPT=$(cat "/tmp/${TASK_ID}.prompt")
 gemini -p "$PROMPT" 2>&1 | tee "/tmp/${TASK_ID}.out"
-EXIT_CODE=${PIPESTATUS[0]}
-cmux wait-for -S "${TASK_ID}-done"
-exit $EXIT_CODE
 LAUNCHER_EOF
       ;;
     cmd)
@@ -122,11 +106,10 @@ LAUNCHER_EOF
 #!/bin/bash
 set -euo pipefail
 TASK_ID="__TASK_ID__"
+# EXIT トラップで確実に完了通知（ペインが閉じられても発火する）
+trap 'touch "/tmp/${TASK_ID}.done"; cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true' EXIT
 CMD=$(cat "/tmp/${TASK_ID}.prompt")
 eval "$CMD" 2>&1 | tee "/tmp/${TASK_ID}.out"
-EXIT_CODE=${PIPESTATUS[0]}
-cmux wait-for -S "${TASK_ID}-done"
-exit $EXIT_CODE
 LAUNCHER_EOF
       ;;
     *)
@@ -135,25 +118,23 @@ LAUNCHER_EOF
       ;;
   esac
 
-  # cmux で新ペインを作成
-  local pane_output
-  pane_output="$(cmux new-split right)"
+  # 現在のワークスペース内に新しいペインを作成
+  local split_output
+  split_output="$(cmux --id-format refs new-pane)"
   local surface_ref
-  # 出力形式: "OK surface:NN workspace:NN"
-  surface_ref="$(echo "$pane_output" | grep -o 'surface:[0-9]*' | head -1)"
+  surface_ref="$(echo "$split_output" | grep -o 'surface:[0-9]*' | head -1)"
 
   if [[ -z "$surface_ref" ]]; then
-    echo "Error: failed to extract surface ref from: $pane_output" >&2
+    echo "Error: failed to extract surface ref from: $split_output" >&2
     exit 1
   fi
 
   # プレースホルダーを実際の値で置換
-  sed -i '' -e "s/__TASK_ID__/$task_id/g" -e "s/__SURFACE_REF__/$surface_ref/g" "$launcher"
+  sed -i '' -e "s/__TASK_ID__/$task_id/g" "$launcher"
   chmod +x "$launcher"
 
-  # ランチャーを送信して実行
-  cmux send --surface "$surface_ref" "/tmp/${task_id}.sh"
-  cmux send-key --surface "$surface_ref" Enter
+  # ランチャーを送信して実行（\n で Enter 送信）
+  cmux send --surface "$surface_ref" "/tmp/${task_id}.sh\n"
 
   # ステータス更新
   cmux set-status "$task_id" "Running ($agent)" --icon "▶️" 2>/dev/null || true
@@ -171,8 +152,14 @@ cmd_probe() {
   local agent_type="${3:-}"
   local outfile="/tmp/${task_id}.out"
 
-  # 1. done シグナル確認
-  if cmux wait-for -G "${task_id}-done" --timeout 0 2>/dev/null; then
+  # 1. ファイルベース完了チェック（.done マーカーまたは .result ファイル）
+  if [[ -f "/tmp/${task_id}.done" ]] || [[ -s "/tmp/${task_id}.result" ]]; then
+    echo "STATUS=completed"
+    return 0
+  fi
+
+  # 2. cmux シグナル確認（即時チェック）
+  if cmux wait-for "${task_id}-done" --timeout 0 2>/dev/null; then
     echo "STATUS=completed"
     return 0
   fi
@@ -271,7 +258,7 @@ cmd_wait_poll() {
     esac
 
     # interval 秒待つか、done シグナルが来るかのどちらか
-    if cmux wait-for -G "${task_id}-done" --timeout "$interval" 2>/dev/null; then
+    if cmux wait-for "${task_id}-done" --timeout "$interval" 2>/dev/null; then
       cmux set-status "$task_id" "Done" --icon "✅" 2>/dev/null || true
       echo "PROGRESS elapsed=$((SECONDS - start_seconds)) status=completed"
       echo "OK"
@@ -288,18 +275,66 @@ cmd_wait_poll() {
 cmd_wait() {
   local task_id="${1:?task_id required}"
   local timeout="${2:-$DEFAULT_TIMEOUT}"
+  local surface_ref="${3:-}"
+  local agent_type="${4:-}"
 
   cmux set-status "$task_id" "Waiting..." --icon "⏳" 2>/dev/null || true
 
-  # 完了シグナルをブロック待ち
-  if cmux wait-for -G "${task_id}-done" --timeout "$timeout"; then
-    cmux set-status "$task_id" "Done" --icon "✅" 2>/dev/null || true
-    echo "OK"
-  else
-    cmux set-status "$task_id" "Timeout" --icon "⏰" 2>/dev/null || true
-    echo "TIMEOUT" >&2
-    return 1
+  # 短い間隔でシグナル待ち + ファイルチェックを繰り返す
+  # cmux wait-for シグナルは届かないことがあるため、ファイルベースをフォールバックとする
+  local start_seconds=$SECONDS
+  while [[ $((SECONDS - start_seconds)) -lt $timeout ]]; do
+    # ファイルベース完了チェック（.done マーカーまたは .result ファイル）
+    if [[ -f "/tmp/${task_id}.done" ]] || [[ -s "/tmp/${task_id}.result" ]]; then
+      cmux set-status "$task_id" "Done" --icon "✅" 2>/dev/null || true
+      echo "OK"
+      return 0
+    fi
+
+    # cmux シグナル待ち（最大15秒でタイムアウトし、ファイルを再チェック）
+    local wait_chunk=15
+    local remaining=$((timeout - (SECONDS - start_seconds)))
+    if [[ $remaining -lt $wait_chunk ]]; then
+      wait_chunk=$remaining
+    fi
+    if [[ $wait_chunk -le 0 ]]; then
+      break
+    fi
+
+    if cmux wait-for "${task_id}-done" --timeout "$wait_chunk" 2>/dev/null; then
+      cmux set-status "$task_id" "Done" --icon "✅" 2>/dev/null || true
+      echo "OK"
+      return 0
+    fi
+  done
+
+  # タイムアウト → probe で 1 回だけ状態確認
+  if [[ -n "$surface_ref" ]] || [[ -f "/tmp/${task_id}.out" ]]; then
+    local status_line
+    status_line=$(cmd_probe "$task_id" "$surface_ref" "$agent_type" 2>/dev/null || true)
+    local status="${status_line#STATUS=}"
+
+    case "$status" in
+      completed|idle)
+        cmux set-status "$task_id" "Done (late)" --icon "✅" 2>/dev/null || true
+        echo "OK"
+        return 0
+        ;;
+      active)
+        # まだ動いている → 追加 60s 待機
+        cmux set-status "$task_id" "Extra wait..." --icon "⏳" 2>/dev/null || true
+        if cmux wait-for "${task_id}-done" --timeout 60 2>/dev/null; then
+          cmux set-status "$task_id" "Done" --icon "✅" 2>/dev/null || true
+          echo "OK"
+          return 0
+        fi
+        ;;
+    esac
   fi
+
+  cmux set-status "$task_id" "Timeout" --icon "⏰" 2>/dev/null || true
+  echo "TIMEOUT" >&2
+  return 1
 }
 
 # --- read ---
@@ -307,21 +342,31 @@ cmd_read() {
   local task_id="${1:?task_id required}"
   local surface_ref="${2:-}"
   local lines="${3:-200}"
+  local resultfile="/tmp/${task_id}.result"
   local outfile="/tmp/${task_id}.out"
 
-  # まず一時ファイルから読む（gemini/cmd）
-  if [[ -f "$outfile" ]]; then
+  # 1. エージェントが書き出した結果ファイル（claude/codex）
+  if [[ -f "$resultfile" ]] && [[ -s "$resultfile" ]]; then
+    echo "SOURCE=result_file"
+    cat "$resultfile"
+    return 0
+  fi
+
+  # 2. stdout キャプチャファイル（gemini/cmd）
+  if [[ -f "$outfile" ]] && [[ -s "$outfile" ]]; then
+    echo "SOURCE=output_file"
     cat "$outfile"
     return 0
   fi
 
-  # ファイルがなければ read-screen（claude/codex）
+  # 3. スクリーンバッファ（フォールバック）
   if [[ -n "$surface_ref" ]]; then
+    echo "SOURCE=screen_buffer"
     cmux read-screen --surface "$surface_ref" --scrollback --lines "$lines"
     return 0
   fi
 
-  echo "Error: no output file found and no surface_ref provided" >&2
+  echo "Error: no result file, output file, or surface_ref available" >&2
   return 1
 }
 
@@ -346,15 +391,14 @@ cmd_cleanup() {
   fi
 
   # 一時ファイル削除
-  rm -f "/tmp/${task_id}.prompt" "/tmp/${task_id}.sh" "/tmp/${task_id}.out"
+  rm -f "/tmp/${task_id}.prompt" "/tmp/${task_id}.sh" "/tmp/${task_id}.out" "/tmp/${task_id}.result" "/tmp/${task_id}.done"
 
   # ステータスクリア
   cmux clear-status "$task_id" 2>/dev/null || true
 
-  # ペイン閉鎖（surface_ref が指定された場合）
+  # ペイン（サーフェス）を閉じる
   if [[ -n "$surface_ref" ]]; then
-    cmux send --surface "$surface_ref" "exit"
-    cmux send-key --surface "$surface_ref" Enter 2>/dev/null || true
+    cmux close-surface --surface "$surface_ref" 2>/dev/null || true
   fi
 
   echo "Cleaned up $task_id"

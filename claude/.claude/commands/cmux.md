@@ -51,10 +51,9 @@ cmux sidebar-state --json
 cmux new-split right --json
 ```
 2. 返された surface ref を記録する。
-3. コマンドを送信:
+3. コマンドを送信（`\n` で Enter 送信）:
 ```bash
-cmux send --surface <ref> "<command>"
-cmux send-key --surface <ref> Enter
+cmux send --surface <ref> "<command>\n"
 ```
 4. サイドバーにステータスを設定:
 ```bash
@@ -80,10 +79,9 @@ cmux read-screen --surface <ref> --lines <N|50>
 
 引数: `send <surface_ref> <command>`
 
-1. 指定サーフェスにコマンドを送信:
+1. 指定サーフェスにコマンドを送信（`\n` で Enter 送信）:
 ```bash
-cmux send --surface <ref> "<command>"
-cmux send-key --surface <ref> Enter
+cmux send --surface <ref> "<command>\n"
 ```
 2. 送信完了を報告する。
 
@@ -101,4 +99,5 @@ cmux send-key --surface <ref> Enter
 
 - `--json` フラグを積極的に使い、出力をパースしやすくする
 - surface ref は `surface:N` 形式で指定する
-- `send` でコマンドを送った後、実行するには `send-key Enter` が必要
+- `cmux send` はエスケープシーケンスをサポート: `\n`/`\r` で Enter、`\t` で Tab。`send-key` を別途呼ぶ必要はない
+- ペインを閉じるには `cmux close-surface --surface <ref>` を使う（`send "exit"` より確実）

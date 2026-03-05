@@ -43,6 +43,8 @@
       "Read(~/.claude/templates)",
       "Read(~/.zprofile)",
       "Read(~/.zshrc)",
+      "Read(/tmp)",
+      "Write(/tmp)",
       "Read(~/Documents/Obsidian Vault/tasks)",
       "mcp__o3__o3-search",
       "mcp__plugin_serena_serena__activate_project",
@@ -99,5 +101,6 @@
     "skill-creator@claude-plugins-official": true
   },
   "alwaysThinkingEnabled": true,
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "model": "sonnet"
 }
