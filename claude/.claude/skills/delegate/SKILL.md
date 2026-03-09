@@ -1,341 +1,291 @@
 ---
 name: delegate
-description: "AI \u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u59d4\u4efb \u2014 cmux-delegate \u3067\u5225\u30da\u30a4\u30f3\u306e AI \u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u306b\u30bf\u30b9\u30af\u3092\u59d4\u4efb\u3057\u3001\u7d50\u679c\u3092\u53ce\u96c6\u30fb\u7d71\u5408\u3059\u308b\u3002\u30e6\u30fc\u30b6\u30fc\u304c\u300c\u59d4\u4efb\u3057\u3066\u300d\u300c\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\u306b\u3084\u3089\u305b\u3066\u300d\u300cdelegate\u300d\u300c\u4e26\u5217\u3067\u3084\u3063\u3066\u300d\u300c\u5206\u62c5\u3057\u3066\u300d\u3068\u8a00\u3063\u305f\u3068\u304d\u3001\u307e\u305f\u306f\u8907\u6570\u306e\u72ec\u7acb\u30bf\u30b9\u30af\u3092\u5225\u306e AI \u306b\u4efb\u305b\u305f\u3044\u3068\u304d\u306b\u4f7f\u3046\u3002Single \u30e2\u30fc\u30c9\uff081\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8\uff09\u3068 Commander \u30e2\u30fc\u30c9\uff08\u5206\u6790\u21d2\u5206\u89e3\u21d2\u4e26\u5217\u59d4\u4efb\u21d2\u7d71\u5408\uff09\u3092\u30b5\u30dd\u30fc\u30c8\u3002/delegate \u30b3\u30de\u30f3\u30c9\u3067\u3082\u30c8\u30ea\u30ac\u30fc\u3055\u308c\u308b\u3002"
+description: "AI agent delegation — launch AI agents (claude, codex, gemini) in separate cmux panes, wait for completion, and collect/integrate results. Use this skill for: (1) explicit delegation ('delegate', 'have codex/claude/gemini do it', 'ask another model', 'second opinion', 'fan out', 'parallelize', 'split the work', 'run in parallel', '別エージェント', '並列で'), (2) complex analysis tasks like code review, architecture design, investigation, debugging root causes, performance analysis, or security audits — these benefit from a dedicated agent's focused attention, (3) running commands in separate panes ('別ペインで', 'go test and npm lint simultaneously'). Also triggered by /delegate command. Do NOT use for simple direct edits: single-file bug fixes, README updates, dependency cleanup, or straightforward configuration changes that you can handle inline without delegation."
 allowed-tools:
   - Bash(cmux-delegate:*)
   - Bash(cmux:*)
   - Bash(git diff*)
   - Bash(git log*)
-  - Bash(cat /tmp/delegate*)
+  - Bash(cat /tmp/delegate-*)
+metadata:
+  author: tesso57
+  version: 2.0.0
 ---
 
-## What is cmux-delegate
+## Critical Rules
 
-cmux-delegate is a delegation script that launches AI agents (claude, codex, gemini) or arbitrary commands in separate tmux panes, waits for completion, and collects results. It builds on cmux's IPC primitives.
+**Read this section first. These rules override all other instructions.**
 
-## Environment Check
+1. **Broad delegation by default.** Delegate complex tasks (review, design, investigation, architecture, performance analysis, security audits) to a dedicated agent — the user benefits from focused analysis even without explicitly asking for delegation. Only handle simple, direct edits inline (single-file fixes, README updates, dependency cleanup). When in doubt, delegate.
 
-Always verify cmux is available first:
-```bash
-cmux ping
-```
-If this fails, tell the user "cmux environment is not available" and stop.
+2. **Environment check is mandatory.** Always run `cmux ping` before any delegation. If it fails, tell the user "cmux environment is not available" and stop.
 
----
+3. **Worker prompts must include "do not use cmux-delegate"** — workers use their native tools only.
 
-## Agent Profiles
+4. **Always cleanup panes.** Pass `surface_ref` to `cmux-delegate cleanup` after every task. Leaked panes waste resources.
 
-Reference this table for timeouts, result retrieval, and cleanup throughout all phases.
+5. **Skip-permissions risk.** claude/codex agents launch with skip-permissions. Only delegate trusted prompts — never pass unvalidated user input directly.
 
-| Property | claude | codex | gemini | cmd |
-|---|---|---|---|---|
-| Default timeout | 900s | 3600s | 180s | 180s |
-| Completion detection | Process exit -> launcher signals | Process exit -> launcher signals | Process exit -> signal | Process exit -> signal |
-| Result retrieval (priority) | 1. `.result` file 2. screen fallback | 1. `.result` file 2. screen fallback | `/tmp/<task_id>.out` | `/tmp/<task_id>.out` |
-| On timeout | probe once -> +60s if active | probe once -> +60s if active | Immediate TIMEOUT | Immediate TIMEOUT |
-| Cleanup grace period | 3s | 5s | 0s | 0s |
-
-### Agent Characteristics (Practical Knowledge)
-
-**claude** -- 仕様に忠実な実装者
-- 設計済みの仕様・プロンプトに沿った中〜小規模コーディングに強い
-- 「機能が動くか」に集中する力がある。プロンプトの指示を忠実に実行する
-- `.result` ファイルを安定して書き出す（結果取得の信頼性が高い）
-- 弱み: 大規模・高抽象度のタスクでは指示が曖昧だと方向を見失いやすい
-- 得意: リファクタリング実装、バグ修正、テスト追加、設計済み機能の実装
-
-**codex** -- 複合的思考の分析者
-- 抽象的・複合的な思考タスクに強い。「複数の状態を同時に考慮する」力がある
-- タスク分解、講義資料作成、コードレビューなど、多角的な判断が必要な作業が得意
-- 弱み: 実装を任せると細部で指示から逸脱することがある。rate limit に達しやすい
-- `.result` ファイルを書き出さないことがある（フォールバック読み取りの準備が必要）
-- 得意: コードレビュー、アーキテクチャ分析、タスク分解、設計方針の策定
-
-**gemini** -- 高速ワンショット
-- 短い質問、要約、簡単な変換に最適。起動→完了が速い
-- 対話的な作業は不向き。1 回のプロンプトで完結するタスク専用
-
-**cmd** -- 任意コマンド
-- `go test ./...`, `npm run build`, リンター等の定型コマンド実行用
-
-### Agent Selection Rules
-
-| Agent | Strength | Use for |
-|---|---|---|
-| **claude** | Implementation, design, analysis | Coding, refactoring, design, review, investigation |
-| **codex** | Task decomposition, analysis, review | Difficulty assessment, task breakdown, code review, strategy |
-| **gemini** | Fast one-shot | Short questions, summaries, simple transforms |
-| **cmd** | Arbitrary command execution | `go test ./...`, `npm run build`, linters |
-
-**Rules:**
-- Implementation tasks -> claude first
-- codex is for analysis/task-decomposition/review. Don't ask codex to implement directly.
-- If Commander can't assess difficulty -> ask codex to decompose, then delegate implementation to claude.
-- Review (Strategy D) -> always include codex.
-- If codex hits rate limit -> switch to claude. claude can handle analysis tasks too, just with less depth on multi-faceted reasoning.
-- For Brainstorm (Strategy C) -> mix agent types for diversity (e.g., claude + codex). Same agent type gives less divergent perspectives.
+6. **Composability.** This skill cooperates with other skills and direct work. When delegation does not add value (parallelism, different perspective, separate environment), do the work directly instead.
 
 ---
 
-## Mode Selection
+## Instructions
 
-Analyze `$ARGUMENTS` to determine the mode:
+### Step 1: Determine Mode
 
-### 1. Explicit
+Analyze `$ARGUMENTS` to select mode:
 
-| First token | Mode |
+| Condition | Mode |
 |---|---|
-| `commander` | Commander mode |
-| `single` | Single mode (forced) |
+| First token is `commander` | Commander mode |
+| First token is `single` | Single mode |
+| First token is `claude`/`codex`/`gemini`/`cmd` | Single mode (agent specified) |
+| User explicitly asks for parallel/multi-agent work | Commander (infer strategy below) |
+| Complex task (review, design, investigate, architecture) | Single mode (default: codex for analysis, claude for implementation) |
+| Single delegation request | Single mode (default: claude) |
 
-### 2. Agent specified (Single mode)
+Commander strategy inference:
 
-First token is `claude` / `codex` / `gemini` / `cmd` -> Single mode
-
-### 3. Task nature inference
-
-If first token matches none of the above, analyze the full prompt:
-
-| Keywords/pattern | Inference |
+| User intent | Strategy |
 |---|---|
-| investigate/explore/search/list/structure | Commander + Divide |
-| compare/design/which/architecture | Commander + Brainstorm |
-| review/check/verify/quality | Commander + Review |
-| Multiple independent tasks ("do A and B") | Commander + Divide |
-| Single task not matching above | Single |
+| Decompose into independent subtasks | Divide |
+| Get diverse perspectives / compare approaches | Brainstorm |
+| Have another agent review changes | Review |
 
-Report the reasoning in one line before executing:
-> Mode: "refactoring" keyword detected -> Commander + Brainstorm
+Report reasoning in one line:
+> Mode: user said "codex にレビューさせて" -> Single mode, codex
 
----
+### Step 2: Execute
 
-## Single Mode
+#### Single Mode
 
-### Parse arguments
+1. **Launch**: `cmux-delegate start <agent_type> "<prompt>"`
+   - Parse output to get TASK_ID and SURFACE_REF
+   - For agent selection guidance, consult `references/agent-profiles.md`
+   - For prompt structure, consult `references/prompt-template.md`
 
-Format: `[agent_type] <prompt>` (remove `single` prefix if present)
-- First token matches agent type -> use it, rest is prompt
-- No match -> entire string is prompt, default to `claude`
+2. **Wait**: `cmux-delegate wait <task_id> <timeout> [surface_ref] [agent_type]`
+   - Timeouts: claude=900s, codex=3600s, gemini=180s, cmd=180s
 
-### Serial Flow
+3. **Read results**: `cmux-delegate read <task_id> [surface_ref] [lines]`
+   - If read fails, consult `references/error-handling.md` for fallback strategy
 
-#### 1. Launch
+4. **Report**: Summarize results for the user. Flag errors. Suggest follow-ups.
 
-```bash
-cmux-delegate start <agent_type> "<prompt>"
-```
-Parse output to get TASK_ID and SURFACE_REF.
+5. **Cleanup**: `cmux-delegate cleanup <task_id> <surface_ref> <grace_period>`
+   - Grace periods: claude=3s, codex=5s, gemini/cmd=0s
+   - **Never skip this step.**
 
-#### 2. Wait
-
-```bash
-cmux-delegate wait <task_id> <timeout> [surface_ref] [agent_type]
-```
-Use timeout from Agent Profiles table. On timeout, `wait` internally probes once and extends by 60s if active.
-
-#### 3. Read results (3-level fallback)
-
-This is the most failure-prone step. Always be prepared to fall back:
-
-```bash
-# Level 1: cmux-delegate read (normal route)
-cmux-delegate read <task_id> [surface_ref] [lines]
-
-# Level 2: If read fails (Surface is not a terminal, etc.) -> read file directly
-cat /tmp/<task_id>.result 2>/dev/null || cat /tmp/<task_id>.out 2>/dev/null
-
-# Level 3: If no result files -> check work artifacts directly
-git diff --stat  # Did the agent make changes?
-```
-
-**When Level 1 returns `SOURCE=screen_buffer`** and content appears truncated, increase lines:
-```bash
-cmux-delegate read <task_id> <surface_ref> 500
-```
-
-#### 4. Analyze and report
-
-Summarize results for the user. Flag errors. Suggest follow-up actions.
-
-#### 5. Cleanup
-
-```bash
-cmux-delegate cleanup <task_id> <surface_ref> <grace_period>
-```
-- Always pass `surface_ref` (otherwise the pane leaks)
-- Multiple cleanups can be chained: `cleanup <id1> <ref1> 3 && cleanup <id2> <ref2> 3`
-- Cleanup failures are non-fatal; suppress with `2>/dev/null` if needed
-
-### Parallel Flow (for investigation tasks)
-
-When Single mode task is investigative AND agent is claude or codex:
-- Agent A: Direct approach
-- Agent B: Context exploration (git log, imports, call sites)
-- Wait for both, integrate findings
-
----
-
-## Commander Mode
+#### Commander Mode
 
 Read `references/commander.md` for full strategy details (Divide, Brainstorm, Review).
 
-You are the **Commander**: analyze the task, choose the optimal strategy, and orchestrate workers.
+You are the **Commander**: analyze the task, choose strategy, orchestrate workers.
 
-### Step 1: Task Analysis
+**Task Analysis** (always do this first):
 
 | Field | Content |
 |---|---|
 | Type | Implementation / Investigation / Design / Review / Ideation / Test |
-| Scale | Small (1 agent) / Medium (2-3 parallel) / Large (4 parallel) |
+| Scale | Small (1 agent) / Medium (2-3) / Large (4) |
 | Deliverable | Code changes / Report / Design proposal / Review result |
 | Completion criteria | Derive from analysis |
-| Rationale | 1-2 sentences on why this type/scale |
+| Rationale | 1-2 sentences |
 
-### Step 2: Strategy Selection
+**Pre-launch checklist** (verify before starting any agent):
+- [ ] Each task has clear scope with target files identified
+- [ ] Completion criteria are specific and verifiable
+- [ ] No two tasks modify the same files
+- [ ] Worker prompts include "do not use cmux-delegate"
 
+**Strategy Selection**:
 ```
-Can the task be decomposed into independent subtasks?
-Yes -> Strategy B: Divide
-No -> Does the problem need diverse perspectives?
-      Yes -> Strategy C: Brainstorm
-      No -> Is this a review of existing changes?
-            Yes -> Strategy D: Review
-            No -> Commander-delegated Single
+Independent subtasks? -> Divide
+Diverse perspectives needed? -> Brainstorm
+Review of existing changes? -> Review
+None of the above -> Commander-delegated Single
 ```
 
-For each strategy's detailed steps, read `references/commander.md`.
+### Step 3: Cleanup
+
+Always cleanup after reading results. Pass `surface_ref` to avoid pane leaks:
+```bash
+cmux-delegate cleanup <task_id> <surface_ref> <grace_period>
+```
 
 ---
 
-## User-Initiated Completion
+## Execution Model
 
-When `wait` is backgrounded or the user says "done" / "finished":
+### Commander (you)
+- Use `cmux-delegate` for delegation tasks
+- Do direct work for scoping, validation, lightweight info gathering, and result integration
+- Delegate when it adds value: parallelism, different perspective, separate environment
 
-1. Skip waiting -- go straight to result reading
-2. Read all task results in parallel (apply 3-level fallback)
-3. Verify work artifacts (run tests)
-4. Cleanup -> Report
+### Worker (launched agent)
+- Never uses `cmux-delegate`; uses native tools only
+- Always include "do not use cmux-delegate" in worker prompts
 
 ---
 
 ## Batch Execution Pattern
 
-For large refactoring or cross-cutting changes with 5+ subtasks:
+For 5+ subtasks, batch to avoid pane limits:
 
 ```
-Batch 1: Independent, easy tasks (parallel)
+Batch 1: Independent easy tasks (parallel, max 3-4)
   -> Collect results -> Test -> Commit
-
-Batch 2: Tasks depending on Batch 1, or next easiest
+Batch 2: Dependent or harder tasks
   -> Collect results -> Test -> Commit
-
-Batch N: Remaining tasks
-  -> ...
 ```
 
-**Batching rules:**
 - Tasks touching same files go in different batches
 - Order: easy -> medium -> hard
-- Max 3-4 tasks per batch (pane limit)
-- Batch = commit unit; verify tests pass before committing
-- If an agent hits rate limits, switch to another type (codex -> claude)
 
 ---
 
-## Two-Layer Execution Model
+## User-Initiated Completion
 
-### Commander (you)
-
-- **Use cmux-delegate actively**: analysis, decomposition, delegation, integration
-- Don't implement or investigate directly; delegate via cmux-delegate
-- Exception: lightweight info gathering for analysis (git diff, file listing)
-
-### Worker (launched agent)
-
-- **Never use cmux-delegate**: workers use their native tools (Agent tool, Read, Grep, etc.)
-- Include "do not use cmux-delegate" in every worker prompt
+When `wait` is backgrounded or user says "done" / "finished":
+1. Skip waiting -> read all results (apply fallback per `references/error-handling.md`)
+2. Verify work artifacts (run tests)
+3. Cleanup -> Report
 
 ---
 
-## Prompt Template for Workers
+## Examples
 
-Workers launch in isolated sessions. Include sufficient context:
-
+### Example 1: Single delegation (explicit request)
 ```
-## Parent Task
-<Commander's analysis: type, scale, overall goal>
-
-## Context
-- Repository: <repo_path>
-- Branch: <current_branch>
-- Relevant files: <file_list>
-
-## Task
-<Specific instructions>
-
-## Scope Constraints
-- Do not make changes outside the above task scope
-- Report out-of-scope findings in "Additional Findings" section
-- **Do not use cmux-delegate** -- use your native tools
-
-## Completion Criteria
-<Clear acceptance criteria>
-
-## Output Format
-### Result Summary
-<1-3 sentence summary>
-
-### Details
-<Specific changes or findings>
-
-### Additional Findings
-<Out-of-scope but noteworthy findings, or "None">
-
-### Status
-COMPLETED / PARTIAL / FAILED
+User: "codex に PR をレビューさせて"
+-> Mode: agent "codex" specified -> Single mode
+-> cmux-delegate start codex "<review prompt>"
+-> cmux-delegate wait <id> 3600 <surface> codex
+-> cmux-delegate read <id> <surface> 500
+-> Report findings
+-> cmux-delegate cleanup <id> <surface> 5
 ```
 
-**Agent-specific notes:**
-- **codex**: Add "include git diff output in results"
-- **gemini**: Use abbreviated prompt (skip Parent Task, Scope Constraints)
-- **cmd**: No output format needed (stdout is the result)
+### Example 2: Commander + Divide (parallel investigation)
+```
+User: "API の遅延原因を claude と codex に並列で調査させて"
+-> Mode: "並列で" + explicit delegation -> Commander + Divide
+-> Task Analysis: Investigation, Medium (2 agents), Report
+-> Agent A (claude): trace API endpoint execution path
+-> Agent B (codex): analyze query patterns for N+1
+-> Wait both -> Integration Report -> Cleanup
+```
+
+### Example 3: Commander + Brainstorm (get diverse opinions)
+```
+User: "キャッシュ戦略について別エージェントの意見も聞きたい"
+-> Mode: "別エージェントの意見" -> Commander + Brainstorm
+-> Agent A (claude): "Prioritize simplicity and maintainability"
+-> Agent B (codex): "Prioritize performance and scalability"
+-> Wait both -> Compare proposals -> Recommend -> Cleanup
+```
+
+### Example 4: Auto-delegate complex tasks
+```
+User: "この diff をレビューして。特に SQL インジェクションの可能性がないか確認して"
+-> Complex analysis task (security review) -> Single mode, codex
+-> cmux-delegate start codex "<security review prompt>"
+
+User: "API のレスポンスが遅いから原因調べて"
+-> Complex investigation task -> Single mode, codex
+-> cmux-delegate start codex "<performance investigation prompt>"
+```
+
+### Example 5: Do NOT trigger (simple direct tasks)
+```
+User: "src/auth/handler.go のバグを修正して"
+-> Simple single-file fix. Handle directly without delegation.
+
+User: "README.md を更新して"
+-> Simple edit. Handle directly.
+```
+
+### Example 6: Failure recovery
+
+```
+-> cmux-delegate wait <id> 3600 <surface> codex
+-> TIMEOUT
+-> cmux-delegate read <id> <surface> 500  (try for partial results)
+-> If SOURCE=screen_buffer and truncated: re-read with 1000 lines
+-> If no result: check git diff --stat for work artifacts
+-> cmux-delegate cleanup <id> <surface> 5  (always cleanup)
+-> Report partial results and suggest next steps
+```
 
 ---
 
-## Error Handling
+## Troubleshooting
 
-| Situation | Response |
-|---|---|
-| `start` fails | Retry once -> skip and report on second failure |
-| `wait` timeout | `wait` probes internally -> +60s if active -> TIMEOUT |
-| After TIMEOUT | Try `read` for partial results (`.result` may exist) -> `cleanup` |
-| Some tasks fail | Integrate successful results, clearly mark failed tasks |
-| All tasks fail | Analyze error causes, suggest manual alternatives |
-| Conflicting file changes | Highlight conflicts in integration report, suggest manual merge |
-| `SOURCE=screen_buffer` truncated | Re-read with increased `lines` (200 -> 500 -> 1000) |
-| `Surface is not a terminal` | Fall back to `cat /tmp/<task_id>.result` |
-| Rate limit on agent | Switch to different agent type |
+**Skill triggered but delegation was unnecessary**
+- Cause: Task was too simple for delegation (single-file edit, trivial fix)
+- Fix: Do the work directly. Reserve delegation for complex analysis, multi-step investigations, and tasks needing focused attention.
 
-### Timeout Fallback Flow
+**Skill loads but agent doesn't start**
+- Cause: cmux not available or pane limit reached
+- Fix: Run `cmux ping`. Check if max panes reached (limit: 4 parallel).
 
-```
-wait timeout
-  ↓
-probe for status
-  ├─ active   → extra 60s wait (once only)
-  ├─ idle     → treat as completed → read → cleanup (codex specific)
-  ├─ waiting  → permission prompt detected → keep waiting (don't timeout)
-  ├─ frozen   → read partial results → cleanup
-  ├─ completed → read → cleanup (timing lag)
-  └─ unknown  → try read → cleanup
-```
+**Results are truncated**
+- Cause: Default line limit too low
+- Fix: Re-read with more lines: `cmux-delegate read <id> <surface> 1000`
+- If `SOURCE=screen_buffer`, try `cmux read-screen --surface <ref> --scrollback --lines 500`
+
+**Agent hits rate limit**
+- Cause: codex rate limit exceeded
+- Fix: Switch agent type: codex -> claude (claude handles analysis too, with less multi-faceted depth)
+
+**Cleanup didn't close the pane**
+- Cause: Surface ref missing or already closed
+- Fix: Manually close: `cmux close-surface --surface <ref>`
+
+**Wrong mode selected**
+- Cause: Ambiguous user request
+- Fix: Ask the user whether they want direct work or delegation before proceeding.
+
+See `references/error-handling.md` for the full error response table and timeout fallback flow.
+
+---
+
+## Testing
+
+### Trigger Tests
+
+**Should trigger:**
+- "codex にレビューさせて" / "have codex review this" (explicit agent)
+- "claude に実装させて" / "delegate this to claude" (explicit agent)
+- "並列でやって" / "run in parallel" (parallel work)
+- "別エージェントの意見も聞きたい" / "get a second opinion" (second opinion)
+- "この diff をレビューして" (complex analysis — code review)
+- "API のレスポンスが遅いから原因調べて" (complex investigation)
+- "このプロジェクトのアーキテクチャを設計して" (architecture design)
+- "investigate the memory leak" (root cause analysis)
+- /delegate
+
+**Should NOT trigger:**
+- "src/auth/handler.go のバグを修正して" (simple single-file fix)
+- "README.md を更新して" (simple edit)
+- "package.json の依存関係を整理して" (simple cleanup)
+- "docker compose up が失敗する" (simple debugging)
+- "git log 見て確認して" (simple git operation)
+
+### Functional Tests
+
+- `cmux ping` failure -> skill stops with clear message
+- `cmux-delegate start` failure -> retry once, then report
+- `cmux-delegate wait` timeout -> probe, read partial, cleanup
+- No `.result` or `.out` file -> screen fallback -> git diff fallback
+- Cleanup with invalid surface_ref -> non-fatal, log warning
 
 ---
 
 ## Notes
 
-- claude/codex agents launch with skip-permissions -- only delegate trusted prompts
 - Max 4 parallel panes; Commander decides based on task
-- Use `cmux-delegate status <task_id> "progress message"` for long-running tasks
-- Completion detection relies on `.result` file existence check (every 15s). cmux signals are supplementary.
-- Never use subshell expansion `$(...)` or backticks in cmux-delegate commands. Pass prompt strings directly.
+- Use `cmux-delegate status <task_id> "message"` for long-running tasks
+- Completion detection relies on `.done` file (process exit). cmux signals are supplementary.
+- Never use subshell expansion `$(...)` or backticks in cmux-delegate commands

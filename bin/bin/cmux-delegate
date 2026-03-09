@@ -152,8 +152,8 @@ cmd_probe() {
   local agent_type="${3:-}"
   local outfile="/tmp/${task_id}.out"
 
-  # 1. ファイルベース完了チェック（.done マーカーまたは .result ファイル）
-  if [[ -f "/tmp/${task_id}.done" ]] || [[ -s "/tmp/${task_id}.result" ]]; then
+  # 1. ファイルベース完了チェック（.done マーカーのみ）
+  if [[ -f "/tmp/${task_id}.done" ]]; then
     echo "STATUS=completed"
     return 0
   fi
@@ -280,15 +280,33 @@ cmd_wait() {
 
   cmux set-status "$task_id" "Waiting..." --icon "⏳" 2>/dev/null || true
 
-  # 短い間隔でシグナル待ち + ファイルチェックを繰り返す
-  # cmux wait-for シグナルは届かないことがあるため、ファイルベースをフォールバックとする
+  # 短い間隔でシグナル待ち + ファイルチェック + プローブを繰り返す
+  # cmux wait-for シグナルは届かないことがあるため、ファイルベースとプローブをフォールバックとする
   local start_seconds=$SECONDS
+  local idle_count=0
   while [[ $((SECONDS - start_seconds)) -lt $timeout ]]; do
-    # ファイルベース完了チェック（.done マーカーまたは .result ファイル）
-    if [[ -f "/tmp/${task_id}.done" ]] || [[ -s "/tmp/${task_id}.result" ]]; then
+    # ファイルベース完了チェック（.done マーカーのみ — .result はエージェントが途中で書く可能性があるため使わない）
+    if [[ -f "/tmp/${task_id}.done" ]]; then
       cmux set-status "$task_id" "Done" --icon "✅" 2>/dev/null || true
       echo "OK"
       return 0
+    fi
+
+    # codex 用プローブ検知: codex はインタラクティブCLIのため、プロセス終了しない場合がある
+    # 3回連続 idle を検知したら完了とみなす（誤検知防止）
+    if [[ "$agent_type" == "codex" ]] && [[ -n "$surface_ref" ]]; then
+      local screen
+      screen=$(cmux read-screen --surface "$surface_ref" --lines 10 2>/dev/null || true)
+      if echo "$screen" | grep -q '›' && ! echo "$screen" | grep -qE '(Working|Thinking|Searching)'; then
+        idle_count=$((idle_count + 1))
+        if [[ $idle_count -ge 3 ]]; then
+          cmux set-status "$task_id" "Done (idle)" --icon "✅" 2>/dev/null || true
+          echo "OK"
+          return 0
+        fi
+      else
+        idle_count=0
+      fi
     fi
 
     # cmux シグナル待ち（最大15秒でタイムアウトし、ファイルを再チェック）
