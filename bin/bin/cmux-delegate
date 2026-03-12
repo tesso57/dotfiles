@@ -57,17 +57,44 @@ cmd_start() {
 #!/bin/bash
 set -euo pipefail
 TASK_ID="__TASK_ID__"
-# EXIT トラップで確実に完了通知（ペインが閉じられても発火する）
-trap 'touch "/tmp/${TASK_ID}.done"; cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true' EXIT
 PROMPT=$(cat "/tmp/${TASK_ID}.prompt")
-claude "$PROMPT" \
-  --permission-mode acceptEdits \
-  --add-dir /tmp \
-  --append-system-prompt "タスク完了後、最終アクションとして結果のサマリーを以下のBashコマンドで書き出してください:
+
+# 結果ファイル書き出し指示をプロンプト末尾に追加（codex と同じ方式）
+FULL_PROMPT="あなたは orchestrator から委任されたワーカーエージェントです。以下の2ステップで進めてください。
+
+## Step 1: タスクを実行
+${PROMPT}
+
+## Step 2: 結果を報告
+タスク完了後、orchestrator が結果を収集できるよう、以下のコマンドで結果ファイルを書き出してください。これが orchestrator への報告になります。Step 2 を実行するまでタスクは完了とみなされません。
+
 cat > /tmp/${TASK_ID}.result << 'RESULT_EOF'
 （ここに結果サマリーを記述）
 RESULT_EOF
-サマリーには完了したこと、変更内容、重要な発見を含めてください。長さ制限はありません。" || true
+
+良い報告の例:
+cat > /tmp/example.result << 'RESULT_EOF'
+## 完了サマリー
+### 実施した作業
+- UserService の CreateUser メソッドを実装
+- バリデーションロジックを追加
+
+### 作成・変更したファイル
+- pkg/service/user.go（新規作成）
+- pkg/handler/user_handler.go（新規作成）
+
+### ビルド/テスト結果
+- go build ./... OK
+- go test ./pkg/service/... OK（3 tests passed）
+
+### 注意点
+- DB マイグレーションは未実施
+RESULT_EOF"
+
+claude "$FULL_PROMPT" \
+  --permission-mode acceptEdits \
+  --allowedTools 'Bash(cat > /tmp/*)' \
+  --add-dir /tmp || true
 LAUNCHER_EOF
       ;;
     codex)
@@ -75,8 +102,6 @@ LAUNCHER_EOF
 #!/bin/bash
 set -euo pipefail
 TASK_ID="__TASK_ID__"
-# EXIT トラップで確実に完了通知（ペインが閉じられても発火する）
-trap 'touch "/tmp/${TASK_ID}.done"; cmux wait-for -S "${TASK_ID}-done" 2>/dev/null || true' EXIT
 PROMPT=$(cat "/tmp/${TASK_ID}.prompt")
 
 # 結果ファイル書き出し指示をプロンプト末尾に追加
@@ -193,11 +218,14 @@ cmd_probe() {
       return 0
     fi
 
-    # codex 固有: › + Working なし → idle（完了とみなせる）
-    # 注意: probe は単発チェックのため、ランチャー側の安定性閾値（3回連続）とは異なる。
-    # wait-poll が interval ごとに probe を呼ぶため、複数回の idle 検出で信頼度が担保される。
+    # インタラクティブ CLI 固有: プロンプト表示 + 作業インジケーターなし → idle
     if [[ "$agent_type" == "codex" ]]; then
       if echo "$screen1" | grep -q '›' && ! echo "$screen1" | grep -q 'Working'; then
+        echo "STATUS=idle"
+        return 0
+      fi
+    elif [[ "$agent_type" == "claude" ]]; then
+      if echo "$screen1" | grep -q '❯' && ! echo "$screen1" | tail -5 | grep -qE '(⏺|Waiting|· )'; then
         echo "STATUS=idle"
         return 0
       fi
@@ -292,12 +320,28 @@ cmd_wait() {
       return 0
     fi
 
-    # codex 用プローブ検知: codex はインタラクティブCLIのため、プロセス終了しない場合がある
-    # 3回連続 idle を検知したら完了とみなす（誤検知防止）
-    if [[ "$agent_type" == "codex" ]] && [[ -n "$surface_ref" ]]; then
+    # インタラクティブ CLI の idle 検知
+    # claude/codex はタスク完了後もプロセスが終了せずプロンプトに戻るだけのため、
+    # 画面のプロンプト表示で完了を判定する。3回連続 idle で完了とみなす（誤検知防止）
+    if [[ -n "$surface_ref" ]] && [[ "$agent_type" == "codex" || "$agent_type" == "claude" ]]; then
       local screen
       screen=$(cmux read-screen --surface "$surface_ref" --lines 10 2>/dev/null || true)
-      if echo "$screen" | grep -q '›' && ! echo "$screen" | grep -qE '(Working|Thinking|Searching)'; then
+
+      local is_idle=false
+      if [[ "$agent_type" == "codex" ]]; then
+        # codex: › プロンプト + 作業インジケーターなし
+        if echo "$screen" | grep -q '›' && ! echo "$screen" | grep -qE '(Working|Thinking|Searching)'; then
+          is_idle=true
+        fi
+      elif [[ "$agent_type" == "claude" ]]; then
+        # claude: ❯ プロンプト + ツール実行中インジケーターなし
+        # ❯ は Claude Code の入力プロンプト。⏺ が最後の数行にあれば実行中。
+        if echo "$screen" | grep -q '❯' && ! echo "$screen" | tail -5 | grep -qE '(⏺|Waiting|· )'; then
+          is_idle=true
+        fi
+      fi
+
+      if [[ "$is_idle" == "true" ]]; then
         idle_count=$((idle_count + 1))
         if [[ $idle_count -ge 3 ]]; then
           cmux set-status "$task_id" "Done (idle)" --icon "✅" 2>/dev/null || true

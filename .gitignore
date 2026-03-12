@@ -3,3 +3,4 @@ secure.sh
 
 # グローバル gitignore の .claude/ 除外を、このリポジトリでは解除
 !claude/.claude/
+delegate-workspace/

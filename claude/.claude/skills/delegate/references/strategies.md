@@ -13,8 +13,8 @@ For single-agent tasks, just follow the main SKILL.md flow directly.
 
 For each subtask determine:
 - Subtask name
-- Agent type (reference Agent Selection in SKILL.md)
-- Prompt (use `references/prompt-template.md`)
+- Agent type (see Agent Selection in SKILL.md)
+- Prompt (see Worker Prompt Checklist in `orchestrator-loop.md`)
 
 ### 2. Parallel Launch
 

@@ -9,204 +9,176 @@ allowed-tools:
   - Bash(cat /tmp/delegate-*)
 metadata:
   author: tesso57
-  version: 3.0.0
+  version: 3.1.0
 ---
 
 ## Critical Rules
 
-1. **Broad delegation by default.** Complex tasks (review, design, investigation, architecture, performance analysis, security audits) benefit from a dedicated agent's focused attention. Only handle simple, direct edits inline. When in doubt, delegate.
+These prevent the most common failure modes observed in practice:
 
-2. **Environment check is mandatory.** Always run `cmux ping` first. If it fails, tell the user "cmux environment is not available" and stop.
+1. **cmux, NOT tmux.** This skill uses only `cmux` and `cmux-delegate`. `tmux` commands (`tmux send-keys`, `tmux split-window`, `tmux capture-pane`) look similar but are a completely different system — using them will silently fail.
 
-3. **Always cleanup panes.** Pass `surface_ref` to `cmux-delegate cleanup` after every task. Leaked panes waste resources.
+2. **Delegate broadly.** Complex tasks (review, design, investigation, architecture, performance, security) benefit from a dedicated agent's focused attention. Only handle simple, direct edits inline. When in doubt, delegate.
 
-4. **Skip-permissions risk.** claude/codex agents launch with skip-permissions. Only delegate trusted prompts.
+3. **Ping first.** Run `cmux ping` before any delegation. If it fails, tell the user "cmux environment is not available" and stop.
 
----
+4. **Always cleanup.** Pass `surface_ref` to `cmux-delegate cleanup` after every task. Leaked panes consume resources and clutter the workspace.
 
-## You Are the Orchestrator
-
-When this skill fires, you become the orchestrator. You run a PDCA loop:
-
-```
-┌→ P (Plan)    : agents/planner.md — タスク分析、delegation plan 作成
-│     ↓
-│  D (Do)      : cmux-delegate で agent 起動 → 待機 → 結果収集
-│     ↓
-│  C (Check)   : agents/checker.md — 結果の品質・完了度を評価
-│     ↓
-└─ A (Act)     : agents/actor.md — 次のアクション判断
-                    → DONE: ユーザーに報告
-                    → CONTINUE: planner に戻る
-                    → ESCALATE: ユーザーに判断を仰ぐ
-```
-
-各フェーズの詳細は `agents/` の対応ファイルを読むこと。
-簡単なタスクなら P→D→報告 で完了。フルループは複雑なタスク向け。
+5. **Permission model.** Claude agents launch with `--permission-mode acceptEdits --allowedTools 'Bash(cat > /tmp/*)'`, letting workers write `.result` files without permission prompts. Codex uses its own model. Only delegate trusted prompts.
 
 ---
 
-## P: Plan
+## Agent Selection
 
-`agents/planner.md` を読んで delegation plan を作る。
+| Agent | Best for | Notes |
+|---|---|---|
+| **codex** | Reviews, analysis, architecture, task decomposition | Default for anything analytical |
+| **claude** | Implementation, refactoring, pre-designed features | Faithful execution to spec |
+| **gemini** | Quick questions, summaries, simple conversions | Fast one-shot |
+| **cmd** | Shell commands | `go test`, `npm run build`, linters |
 
-- 何を誰に頼むか（タスク内容 + agent type）
-- worker に渡すコンテキスト（ファイルパス、ブランチ、背景情報）
-- 完了条件
-
-簡単なタスク（"codex にレビューさせて"）なら即座にインラインで計画。
-複雑なタスクなら `agents/planner.md` のフレームワークに従う。
+- **Review → always codex** — no exceptions, even under rate limits (wait for recovery)
+- Implementation → claude
+- Multiple perspectives → claude + codex in parallel
+- Design/architecture → Brainstorm strategy (`references/strategies.md`)
 
 ---
 
-## D: Do
+## Simple Delegation
 
-計画に基づいて agent を起動し、結果を収集する。
-
-### Launch
+Most delegations (80%) follow this pattern. For exact command args, see `references/cmux-delegate-api.md`.
 
 ```bash
-cmux-delegate start <agent_type> "<prompt>"
-```
-Parse output to get TASK_ID and SURFACE_REF.
+# 1. Launch
+cmux-delegate start claude "task description"
+# → TASK_ID=delegate-xxx SURFACE_REF=surface:N
 
-### Wait
+# 2. Wait (always pass surface_ref and agent_type — needed for idle detection)
+cmux-delegate wait delegate-xxx 900 surface:N claude
 
-```bash
-cmux-delegate wait <task_id> <timeout> [surface_ref] [agent_type]
-```
-Timeouts: claude=900s, codex=3600s, gemini=180s, cmd=180s
+# 3. Read results
+cmux-delegate read delegate-xxx surface:N
 
-### Read (3-level fallback)
-
-```bash
-# Level 1: normal
-cmux-delegate read <task_id> [surface_ref] [lines]
-
-# Level 2: file fallback
-cat /tmp/<task_id>.result 2>/dev/null || cat /tmp/<task_id>.out 2>/dev/null
-
-# Level 3: artifact check
-git diff --stat
+# 4. Cleanup (always run)
+cmux-delegate cleanup delegate-xxx surface:N 3
 ```
 
-See `references/error-handling.md` for full fallback flow.
-
-### Cleanup
-
-```bash
-cmux-delegate cleanup <task_id> <surface_ref> <grace_period>
-```
-Grace periods: claude=3s, codex=5s, gemini/cmd=0s. **Never skip.**
+Every worker prompt must include:
+- Specific task + context (file paths, branch, background)
+- Completion criteria
+- **"do not use cmux-delegate"** (prevents recursive delegation)
 
 ---
 
-## C: Check
+## Complex Tasks: PDCA Loop
 
-`agents/checker.md` を読んで結果を評価する。
+For tasks that may need iteration (investigation, multi-step analysis):
 
-- 完了条件を満たしているか
-- 結果は具体的で actionable か
-- 複数 agent なら結果間の矛盾・カバレッジを確認
+```
+┌→ P (Plan)  → D (Do)  → C (Check)  → A (Act) ─┐
+│                                                  │
+│  CONTINUE ←──────────────────────────────────────┘
+│  DONE → report to user
+│  ESCALATE → ask user for guidance
+```
+
+Each phase has its own reference file in `agents/`:
+- **P**: `agents/planner.md` — plan format, worker prompt checklist, difficulty assessment
+- **C**: `agents/checker.md` — evaluation criteria, Check Result format
+- **A**: `agents/actor.md` — decision flow, stop/continue/escalate criteria
+
+Read only the phase you need. Max 3 iterations. For simple tasks, skip C and A — just P→D→report.
 
 ---
 
-## A: Act
+## Parallel Execution
 
-`agents/actor.md` を読んで次のアクションを決定する。
+For multi-agent tasks, see `references/strategies.md`:
+- **Divide**: Independent subtasks in parallel
+- **Brainstorm**: Multiple perspectives on design/architecture
+- **Review**: Code change quality verification
 
-- **DONE**: ユーザーに報告して終了
-- **CONTINUE**: gaps を planner にフィードして再計画 → ループ継続
-- **ESCALATE**: ユーザーに判断を仰ぐ
-
-ループ上限: 最大 3 回。3 回目で PASS にならなければ結果をまとめて報告。
-
----
-
-## 複数 agent の並列実行
-
-複数 agent を使う場合（並列調査、brainstorm 等）は `references/strategies.md` を参照。
-
-**Pre-launch checklist:**
-- [ ] 各タスクのスコープが明確
-- [ ] 同じファイルを触るタスクが同時に走らない
-- [ ] Worker プロンプトに "do not use cmux-delegate" を含む
-
-**Batch pattern** (5+ subtasks):
-```
-Batch 1: Independent easy tasks (max 4 parallel)
-  → Collect → Test → Commit
-Batch 2: Dependent or harder tasks
-  → Collect → Test → Commit
-```
+Pre-launch checklist:
+- [ ] Each task has a clear, non-overlapping scope
+- [ ] No tasks modify the same files simultaneously
+- [ ] Worker prompts include "do not use cmux-delegate"
+- [ ] Max 4 parallel panes
 
 ---
 
 ## Examples
 
-### Simple: Explicit agent request
+### Simple: Explicit request
 ```
-User: "codex に PR をレビューさせて"
-→ P: codex で PR レビュー。即座に計画。
-→ D: cmux-delegate start codex "<review prompt>" → wait → read
-→ ユーザーに報告 → cleanup
+User: "have codex review this PR"
+→ codex, PR review
+→ start → wait → read → report → cleanup
 ```
 
 ### Simple: Auto-delegate
 ```
-User: "この diff をレビューして"
-→ P: セキュリティ含むコードレビュー → codex, 1 agent
-→ D: start → wait → read
-→ ユーザーに報告 → cleanup
+User: "review this diff"
+→ codex (reviews always use codex), 1 agent
+→ start → wait → read → report → cleanup
 ```
 
-### Full loop: Complex investigation
+### PDCA: Complex investigation
 ```
-User: "API のレスポンスが遅いから原因調べて"
-→ P: パフォーマンス調査 → codex (analyzer), 1 agent
+User: "API response is slow, investigate"
+→ P: codex for performance investigation
 → D: start codex → wait → read
-→ C: 結果を評価 → "DB クエリが遅いと判明。具体的なクエリは特定できていない"
-→ A: CONTINUE — 追加調査が必要
-→ P: 具体的なクエリ特定 → claude, 1 agent (前回の結果をコンテキストに)
+→ C: "DB queries slow, specific queries not identified" → NEEDS_MORE
+→ A: CONTINUE
+→ P: claude to identify specific queries (with previous results as context)
 → D: start claude → wait → read
-→ C: "N+1 クエリを3箇所特定。修正案付き" → PASS
-→ A: DONE → ユーザーに報告 → cleanup
+→ C: "N+1 queries in 3 places, fix proposals included" → PASS
+→ A: DONE → report → cleanup
 ```
 
-### Parallel: Multiple agents
+### Parallel: Brainstorm
 ```
-User: "キャッシュ戦略について別エージェントの意見も聞きたい"
-→ P: 2 agents で brainstorm (references/strategies.md)
-→ D: start claude + start codex (異なる視点) → wait both → read both
-→ C: 両方の提案を cross-reference
-→ A: DONE → 統合報告 → cleanup
+User: "get another agent's opinion on caching strategy"
+→ 2 agents, Brainstorm strategy
+→ start claude + start codex → wait both → read both
+→ Cross-reference → integrated report → cleanup
 ```
 
 ### Do NOT trigger
 ```
-User: "src/auth/handler.go のバグを修正して"
+User: "fix the bug in src/auth/handler.go"
 → Simple single-file fix. Handle directly.
 ```
 
 ---
 
+## Reference Index
+
+| File | When to read |
+|---|---|
+| `agents/planner.md` | Planning a delegation (plan format, worker prompt checklist) |
+| `agents/checker.md` | Evaluating results (Check Result format, quality criteria) |
+| `agents/actor.md` | Deciding next action (stop / continue / escalate) |
+| `references/cmux-delegate-api.md` | Need exact command arguments or defaults |
+| `references/strategies.md` | Multi-agent delegation (Divide / Brainstorm / Review) |
+| `references/error-handling.md` | Something went wrong (timeout, truncation, failures) |
+
+---
+
 ## Troubleshooting
 
-| Problem | Fix |
+| Problem | Quick fix |
 |---|---|
-| Delegation was unnecessary | Simple task — do it directly |
-| Agent doesn't start | `cmux ping`. Check pane limit (max 4) |
-| Results truncated | Re-read: 500 → 1000 lines |
-| Agent hits rate limit | Switch: codex → claude |
+| Agent doesn't start | Run `cmux ping`. Check pane limit (max 4) |
+| Results truncated | Re-read with more lines: `cmux-delegate read <id> <surface> 500` |
+| Agent hits rate limit | Switch agent type (except reviews — wait for codex recovery) |
 | Cleanup didn't close pane | `cmux close-surface --surface <ref>` |
 
-See `references/error-handling.md` for the full error table.
+See `references/error-handling.md` for the full error table, timeout fallback flow, and 3-level result reading fallback.
 
 ---
 
 ## Notes
 
-- Max 4 parallel panes
-- `cmux-delegate status <task_id> "message"` for long-running tasks
-- Completion detection: `.done` file (process exit)
+- Always respond to the user in Japanese
+- Completion detection: idle prompt for claude/codex, `.done` file for gemini/cmd
 - Never use `$(...)` or backticks in cmux-delegate commands
