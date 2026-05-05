@@ -32,3 +32,10 @@ brew bundle -v --file="$GITHUB_DIR/home/.Brewfile"
 
 # mise install
 mise install
+
+# install agent skills declared in skills.json
+if command -v gh >/dev/null 2>&1 && gh auth status &>/dev/null; then
+    "$GITHUB_DIR/bin/bin/sync-skills"
+else
+    echo "skip sync-skills: run 'gh auth login' then '$GITHUB_DIR/bin/bin/sync-skills'"
+fi

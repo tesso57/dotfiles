@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Install / refresh every agent skill listed in skills.json across every agent.
+# Idempotent: safe to re-run. Uses --force so a SHA drift in metadata is overwritten.
+#
+# Usage:
+#   sync-skills              # uses default manifest (~/Documents/repos/tesso57/dotfiles/skills.json)
+#   sync-skills <path>       # uses a custom manifest path
+#
+# Manifest format:
+#   {
+#     "agents": ["claude-code", "codex"],
+#     "skills": [
+#       { "repo": "owner/repo", "name": "skill-name" },
+#       { "repo": "owner/repo", "name": "skill-name", "version": "v1.2.3" }
+#     ]
+#   }
+set -euo pipefail
+
+MANIFEST="${1:-$HOME/Documents/repos/tesso57/dotfiles/skills.json}"
+
+if [ ! -f "$MANIFEST" ]; then
+  echo "sync-skills: manifest not found: $MANIFEST" >&2
+  exit 1
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "sync-skills: gh CLI is required" >&2
+  exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "sync-skills: jq is required" >&2
+  exit 1
+fi
+
+mapfile -t agents < <(jq -r '.agents[]' "$MANIFEST")
+mapfile -t skills < <(jq -r '.skills[] | [.repo, .name, (.version // "")] | @tsv' "$MANIFEST")
+
+if [ ${#agents[@]} -eq 0 ] || [ ${#skills[@]} -eq 0 ]; then
+  echo "sync-skills: manifest has no agents or no skills" >&2
+  exit 1
+fi
+
+echo "sync-skills: ${#skills[@]} skill(s) × ${#agents[@]} agent(s) from $MANIFEST"
+
+for entry in "${skills[@]}"; do
+  IFS=$'\t' read -r repo name version <<<"$entry"
+  ref="$name"
+  [ -n "$version" ] && ref="${name}@${version}"
+  for agent in "${agents[@]}"; do
+    echo "==> $repo $ref → $agent (user scope)"
+    gh skill install "$repo" "$ref" --agent "$agent" --scope user --force
+  done
+done
+
+echo "sync-skills: done."
