@@ -4,3 +4,9 @@ secure.sh
 # グローバル gitignore の .claude/ 除外を、このリポジトリでは解除
 !claude/.claude/
 delegate-workspace/
+
+# Skills are managed by gh skill (e.g. tesso57/skills), not by dotfiles.
+# Keep the directory itself so stow creates the ~/.claude/skills symlink,
+# but ignore every entry inside.
+claude/.claude/skills/*
+!claude/.claude/skills/.gitkeep
