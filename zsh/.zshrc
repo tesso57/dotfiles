@@ -170,3 +170,82 @@ fpath=("$HOME/.docker/completions" $fpath)
 autoload -Uz compinit
 compinit
 # End of Docker CLI completions
+
+# pnpm
+export PNPM_HOME="/Users/shinozakitakumi/Library/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+# pnpm end
+
+# gh skill install hook → auto-append to ~/Documents/repos/tesso57/dotfiles/skills.json
+# Tracks new (repo, name[, version]) entries when you run `gh skill install <repo> <name>`.
+# Skips when the install is unusual (--from-local, --dir, interactive without args, etc.)
+# or when the entry is already in the manifest.
+gh() {
+  if [[ "$1" == "skill" && "$2" == "install" ]]; then
+    command gh "$@" || return
+    _sync_skills_record "${@:3}"
+    return
+  fi
+  command gh "$@"
+}
+
+_sync_skills_record() {
+  local manifest="$HOME/Documents/repos/tesso57/dotfiles/skills.json"
+  [[ -f "$manifest" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+
+  local repo="" skill="" version=""
+  local args=("$@") arg i=1
+  while (( i <= ${#args} )); do
+    arg="${args[i]}"
+    case "$arg" in
+      --from-local|--dir|--dir=*)
+        return 0  # custom location — do not track
+        ;;
+      --agent|--scope|--pin)
+        (( i += 2 ))
+        continue
+        ;;
+      --agent=*|--scope=*|--pin=*|--force|--allow-hidden-dirs|--upstream)
+        ;;
+      *)
+        if [[ -z "$repo" ]]; then
+          repo="$arg"
+        elif [[ -z "$skill" ]]; then
+          skill="$arg"
+        fi
+        ;;
+    esac
+    (( i++ ))
+  done
+  [[ -z "$repo" || -z "$skill" ]] && return 0
+
+  if [[ "$skill" == *@* ]]; then
+    version="${skill##*@}"
+    skill="${skill%@*}"
+  fi
+  skill="${skill##*/}"  # strip generic/, personal/ namespace prefix
+
+  if jq -e --arg r "$repo" --arg n "$skill" \
+      '.skills | any(.repo == $r and .name == $n)' "$manifest" >/dev/null; then
+    return 0
+  fi
+
+  local entry tmp
+  if [[ -n "$version" ]]; then
+    entry=$(jq -n --arg r "$repo" --arg n "$skill" --arg v "$version" \
+      '{repo: $r, name: $n, version: $v}')
+  else
+    entry=$(jq -n --arg r "$repo" --arg n "$skill" '{repo: $r, name: $n}')
+  fi
+  tmp="$(mktemp)" || return 0
+  if jq --argjson e "$entry" '.skills += [$e]' "$manifest" > "$tmp"; then
+    mv "$tmp" "$manifest"
+    echo "skills.json: tracked $repo $skill${version:+@$version}"
+  else
+    rm -f "$tmp"
+  fi
+}
