@@ -179,73 +179,73 @@ case ":$PATH:" in
 esac
 # pnpm end
 
-# gh skill install hook → auto-append to ~/Documents/repos/tesso57/dotfiles/skills.json
-# Tracks new (repo, name[, version]) entries when you run `gh skill install <repo> <name>`.
-# Skips when the install is unusual (--from-local, --dir, interactive without args, etc.)
-# or when the entry is already in the manifest.
+# gh skill install hook → reconcile skills.json with installed state.
+# After every successful `gh skill install`, scan ~/.claude/skills/ and
+# ~/.codex/skills/ for SKILL.md entries with metadata.github-* fields
+# (injected by gh skill on remote installs). Any not yet in the manifest
+# get appended. Handles single install, the interactive picker, and any
+# multi-select pattern uniformly because we read the disk, not args.
+# Custom-location installs (--from-local / --dir) are naturally skipped:
+# they land outside the scanned dirs or carry metadata.local-path only.
 gh() {
   if [[ "$1" == "skill" && "$2" == "install" ]]; then
     command gh "$@" || return
-    _sync_skills_record "${@:3}"
+    _sync_skills_reconcile
     return
   fi
   command gh "$@"
 }
 
-_sync_skills_record() {
+_sync_skills_reconcile() {
+  setopt local_options null_glob
+
   local manifest="$HOME/Documents/repos/tesso57/dotfiles/skills.json"
   [[ -f "$manifest" ]] || return 0
   command -v jq >/dev/null 2>&1 || return 0
 
-  local repo="" skill="" version=""
-  local args=("$@") arg i=1
-  while (( i <= ${#args} )); do
-    arg="${args[i]}"
-    case "$arg" in
-      --from-local|--dir|--dir=*)
-        return 0  # custom location — do not track
-        ;;
-      --agent|--scope|--pin)
-        (( i += 2 ))
+  local skill_md repo skill_path name entry tmp line markers val
+  for skill_md in ~/.claude/skills/*/SKILL.md ~/.codex/skills/*/SKILL.md; do
+    [[ -f "$skill_md" ]] || continue
+
+    repo=""
+    skill_path=""
+    markers=0
+    while IFS= read -r line; do
+      if [[ "$line" == "---" ]]; then
+        (( markers++ ))
+        (( markers == 2 )) && break
         continue
-        ;;
-      --agent=*|--scope=*|--pin=*|--force|--allow-hidden-dirs|--upstream)
-        ;;
-      *)
-        if [[ -z "$repo" ]]; then
-          repo="$arg"
-        elif [[ -z "$skill" ]]; then
-          skill="$arg"
-        fi
-        ;;
-    esac
-    (( i++ ))
+      fi
+      (( markers == 1 )) || continue
+      case "$line" in
+        *github-repo:*)
+          val="${line#*github-repo:}"
+          repo="${val# }"
+          ;;
+        *github-path:*)
+          val="${line#*github-path:}"
+          skill_path="${val# }"
+          ;;
+      esac
+    done < "$skill_md"
+    [[ -z "$repo" || -z "$skill_path" ]] && continue
+
+    repo="${repo#https://github.com/}"
+    repo="${repo%.git}"
+    name="${skill_path##*/}"
+
+    if jq -e --arg r "$repo" --arg n "$name" \
+        '.skills | any(.repo == $r and .name == $n)' "$manifest" >/dev/null; then
+      continue
+    fi
+
+    entry=$(jq -n --arg r "$repo" --arg n "$name" '{repo: $r, name: $n}')
+    tmp="$(mktemp)" || continue
+    if jq --argjson e "$entry" '.skills += [$e]' "$manifest" > "$tmp"; then
+      mv "$tmp" "$manifest"
+      echo "skills.json: tracked $repo $name"
+    else
+      rm -f "$tmp"
+    fi
   done
-  [[ -z "$repo" || -z "$skill" ]] && return 0
-
-  if [[ "$skill" == *@* ]]; then
-    version="${skill##*@}"
-    skill="${skill%@*}"
-  fi
-  skill="${skill##*/}"  # strip generic/, personal/ namespace prefix
-
-  if jq -e --arg r "$repo" --arg n "$skill" \
-      '.skills | any(.repo == $r and .name == $n)' "$manifest" >/dev/null; then
-    return 0
-  fi
-
-  local entry tmp
-  if [[ -n "$version" ]]; then
-    entry=$(jq -n --arg r "$repo" --arg n "$skill" --arg v "$version" \
-      '{repo: $r, name: $n, version: $v}')
-  else
-    entry=$(jq -n --arg r "$repo" --arg n "$skill" '{repo: $r, name: $n}')
-  fi
-  tmp="$(mktemp)" || return 0
-  if jq --argjson e "$entry" '.skills += [$e]' "$manifest" > "$tmp"; then
-    mv "$tmp" "$manifest"
-    echo "skills.json: tracked $repo $skill${version:+@$version}"
-  else
-    rm -f "$tmp"
-  fi
 }
