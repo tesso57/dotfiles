@@ -1,9 +1,22 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "_comment": "Declarative manifest of agent skills installed on this machine. Reproduce with: bin/bin/sync-skills",
-  "agents": ["claude-code", "codex"],
+  "agents": [
+    "claude-code",
+    "codex"
+  ],
   "skills": [
-    { "repo": "tesso57/skills", "name": "registering-skill" },
-    { "repo": "tesso57/skills", "name": "delegate" }
+    {
+      "repo": "tesso57/skills",
+      "name": "registering-skill"
+    },
+    {
+      "repo": "tesso57/skills",
+      "name": "delegate"
+    },
+    {
+      "repo": "anthropics/skills",
+      "name": "mcp-builder"
+    }
   ]
 }
