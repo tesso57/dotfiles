@@ -190,13 +190,13 @@ esac
 gh() {
   if [[ "$1" == "skill" && "$2" == "install" ]]; then
     command gh "$@" || return
-    _sync_skills_reconcile
+    gh_skill_reconcile
     return
   fi
   command gh "$@"
 }
 
-_sync_skills_reconcile() {
+gh_skill_reconcile() {
   setopt local_options null_glob
 
   local manifest="$HOME/Documents/repos/tesso57/dotfiles/skills.json"
