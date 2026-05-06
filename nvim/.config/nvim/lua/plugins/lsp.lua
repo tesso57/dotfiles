@@ -10,7 +10,7 @@ return {
       "neovim/nvim-lspconfig",
     },
     opts = {
-      ensure_installed = { "gopls", "lua_ls", "marksman" },
+      ensure_installed = { "gopls", "lua_ls", "marksman", "vtsls", "biome" },
       -- mason-lspconfig はデフォルトで「Masonで入れたサーバを自動enable」するので、
       -- ここでは明示的に enable したい -> OFF にしておく
       automatic_enable = false,
@@ -79,6 +79,54 @@ return {
       vim.lsp.enable("lua_ls")
 
       -- =========================
+      -- TypeScript / JavaScript: vtsls
+      -- =========================
+      vim.lsp.config("vtsls", {
+        settings = {
+          typescript = {
+            inlayHints = {
+              parameterNames = { enabled = "literals" },
+              parameterTypes = { enabled = true },
+              variableTypes = { enabled = false },
+              propertyDeclarationTypes = { enabled = true },
+              functionLikeReturnTypes = { enabled = true },
+              enumMemberValues = { enabled = true },
+            },
+          },
+          javascript = {
+            inlayHints = {
+              parameterNames = { enabled = "literals" },
+              parameterTypes = { enabled = true },
+              variableTypes = { enabled = false },
+              propertyDeclarationTypes = { enabled = true },
+              functionLikeReturnTypes = { enabled = true },
+              enumMemberValues = { enabled = true },
+            },
+          },
+          vtsls = {
+            autoUseWorkspaceTsdk = true,
+          },
+        },
+        on_init = function(client)
+          -- format は conform→biome に一本化するため LSP 側を無効化
+          client.server_capabilities.documentFormattingProvider = false
+          client.server_capabilities.documentRangeFormattingProvider = false
+        end,
+      })
+      vim.lsp.enable("vtsls")
+
+      -- =========================
+      -- Biome (JS/TS lint via LSP)
+      -- =========================
+      vim.lsp.config("biome", {
+        on_init = function(client)
+          client.server_capabilities.documentFormattingProvider = false
+          client.server_capabilities.documentRangeFormattingProvider = false
+        end,
+      })
+      vim.lsp.enable("biome")
+
+      -- =========================
       -- Proto (Buf): buf lsp serve
       -- =========================
       -- Buf CLI が必要です: `buf` コマンドが見つからないと動きません。
@@ -142,6 +190,35 @@ return {
                 pcall(vim.lsp.buf.format, { bufnr = bufnr })
               end,
             })
+          end
+
+          -- TS/JS/JSX/TSX: vtsls の organizeImports を保存時に実行
+          local ts_fts = { typescript = true, typescriptreact = true, javascript = true, javascriptreact = true }
+          if ts_fts[ft] and client and client.name == "vtsls" then
+            vim.api.nvim_create_autocmd("BufWritePre", {
+              group = format_group,
+              buffer = bufnr,
+              callback = function()
+                pcall(vim.lsp.buf.code_action, {
+                  context = { only = { "source.organizeImports" } },
+                  apply = true,
+                })
+              end,
+            })
+
+            -- inlay hint を有効化
+            if vim.lsp.inlay_hint and vim.lsp.inlay_hint.enable then
+              pcall(vim.lsp.inlay_hint.enable, true, { bufnr = bufnr })
+            end
+
+            -- <leader>ih: inlay hint トグル
+            vim.keymap.set("n", "<leader>ih", function()
+              if not (vim.lsp.inlay_hint and vim.lsp.inlay_hint.is_enabled) then
+                return
+              end
+              local enabled = vim.lsp.inlay_hint.is_enabled({ bufnr = bufnr })
+              vim.lsp.inlay_hint.enable(not enabled, { bufnr = bufnr })
+            end, { buffer = bufnr, desc = "Toggle inlay hints" })
           end
 
           -- Lua: 保存時formatは好み（必要ならONに）
