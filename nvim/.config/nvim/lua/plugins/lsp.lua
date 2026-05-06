@@ -192,20 +192,10 @@ return {
             })
           end
 
-          -- TS/JS/JSX/TSX: vtsls の organizeImports を保存時に実行
+          -- TS/JS/JSX/TSX: import 整理 + format は conform 側 (biome-check) に一本化
+          -- vtsls 側では inlay hint を有効化、トグルキーを設定する
           local ts_fts = { typescript = true, typescriptreact = true, javascript = true, javascriptreact = true }
           if ts_fts[ft] and client and client.name == "vtsls" then
-            vim.api.nvim_create_autocmd("BufWritePre", {
-              group = format_group,
-              buffer = bufnr,
-              callback = function()
-                pcall(vim.lsp.buf.code_action, {
-                  context = { only = { "source.organizeImports" } },
-                  apply = true,
-                })
-              end,
-            })
-
             -- inlay hint を有効化
             if vim.lsp.inlay_hint and vim.lsp.inlay_hint.enable then
               pcall(vim.lsp.inlay_hint.enable, true, { bufnr = bufnr })
