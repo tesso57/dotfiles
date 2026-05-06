@@ -11,6 +11,13 @@ return {
         go = { "goimports" },
 
         proto = { "buf", "clang-format", stop_after_first = true },
+
+        javascript      = { "biome" },
+        javascriptreact = { "biome" },
+        typescript      = { "biome" },
+        typescriptreact = { "biome" },
+        json            = { "biome" },
+        jsonc           = { "biome" },
       },
     },
   }
