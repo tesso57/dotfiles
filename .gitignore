@@ -4,3 +4,6 @@ secure.sh
 # グローバル gitignore の .claude/ 除外を、このリポジトリでは解除
 !claude/.claude/
 delegate-workspace/
+
+# superpowers skill が生成する design / plan ドキュメントは追跡しない
+docs/superpowers/
