@@ -54,7 +54,8 @@
       "mcp__plugin_serena_serena__list_dir",
       "Skill(delegate:*)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "auto"
   },
   "hooks": {
     "Notification": [
@@ -104,9 +105,22 @@
     "greptile@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "slack@claude-plugins-official": true,
-    "cloudflare@claude-plugins-official": true
+    "cloudflare@claude-plugins-official": true,
+    "google@kw-marketplace": true
   },
+  "extraKnownMarketplaces": {
+    "kw-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "knowledge-work/claude-marketplace"
+      },
+      "autoUpdate": true
+    }
+  },
+  "language": "Japanese",
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "voiceEnabled": true,
+  "skipAutoPermissionPrompt": true
 }

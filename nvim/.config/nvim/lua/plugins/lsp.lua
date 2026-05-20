@@ -2,6 +2,17 @@ return {
   -- LSPサーバー等のインストール管理
   { "mason-org/mason.nvim", opts = {} },
 
+  -- Mason 経由でLSP以外のツール(formatter等)も自動インストール
+  {
+    "WhoIsSethDaniel/mason-tool-installer.nvim",
+    dependencies = { "mason-org/mason.nvim" },
+    opts = {
+      ensure_installed = { "ruff" },
+      auto_update = false,
+      run_on_start = true,
+    },
+  },
+
   -- mason と lspconfig の橋渡し（lazy.nvim 推奨構成）
   {
     "mason-org/mason-lspconfig.nvim",
@@ -10,7 +21,7 @@ return {
       "neovim/nvim-lspconfig",
     },
     opts = {
-      ensure_installed = { "gopls", "lua_ls", "marksman", "vtsls", "biome" },
+      ensure_installed = { "gopls", "lua_ls", "marksman", "vtsls", "biome", "pyright" },
       -- mason-lspconfig はデフォルトで「Masonで入れたサーバを自動enable」するので、
       -- ここでは明示的に enable したい -> OFF にしておく
       automatic_enable = false,
@@ -125,6 +136,23 @@ return {
         end,
       })
       vim.lsp.enable("biome")
+
+      -- =========================
+      -- Python: pyright
+      -- =========================
+      vim.lsp.config("pyright", {
+        settings = {
+          python = {
+            analysis = {
+              typeCheckingMode = "basic",
+              autoSearchPaths = true,
+              useLibraryCodeForTypes = true,
+              diagnosticMode = "openFilesOnly",
+            },
+          },
+        },
+      })
+      vim.lsp.enable("pyright")
 
       -- =========================
       -- Proto (Buf): buf lsp serve

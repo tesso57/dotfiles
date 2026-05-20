@@ -1,6 +1,7 @@
 return {
   {
     "nvim-treesitter/nvim-treesitter",
+    branch = "master",   -- main ブランチ(v1.0+)はAPIが別物なので classic API の master に固定
     lazy = false,        -- nvim-treesitter は lazy-loading 非対応
     build = ":TSUpdate", -- プラグイン更新時にパーサも更新
     config = function()

@@ -20,6 +20,8 @@ return {
         typescriptreact = { "biome-check" },
         json            = { "biome" },
         jsonc           = { "biome" },
+
+        python = { "ruff_organize_imports", "ruff_format" },
       },
 
       -- conform の biome-check は default で --unsafe を付けない
