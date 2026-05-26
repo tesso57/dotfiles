@@ -21,9 +21,7 @@ return {
       "neovim/nvim-lspconfig",
     },
     opts = {
-      ensure_installed = { "gopls", "lua_ls", "marksman", "vtsls", "biome", "pyright" },
-      -- mason-lspconfig はデフォルトで「Masonで入れたサーバを自動enable」するので、
-      -- ここでは明示的に enable したい -> OFF にしておく
+      ensure_installed = { "lua_ls", "marksman", "vtsls", "biome", "pyright" },
       automatic_enable = false,
     },
   },
@@ -50,12 +48,14 @@ return {
       -- Go: gopls
       -- =========================
       vim.lsp.config("gopls", {
+        cmd = { "gopls", "-remote=auto" },
+        cmd_env = { GOMEMLIMIT = "8GiB" },
         settings = {
           gopls = {
             ["formatting.local"] = "github.com/knowledge-work",
             gofumpt = true,
-            staticcheck = true,
             analyses = { unusedparams = true },
+            directoryFilters = { "-**/node_modules", "-**/vendor", "-**/dist", "-**/.git" },
           },
         },
       })
