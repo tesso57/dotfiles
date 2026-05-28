@@ -1,0 +1,1 @@
+-- Register gowork as a known filetype for LSP health checks.
