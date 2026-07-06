@@ -47,18 +47,7 @@ return {
       -- =========================
       -- Go: gopls
       -- =========================
-      vim.lsp.config("gopls", {
-        cmd = { "gopls", "-remote=auto" },
-        cmd_env = { GOMEMLIMIT = "8GiB" },
-        settings = {
-          gopls = {
-            ["formatting.local"] = "github.com/knowledge-work",
-            gofumpt = true,
-            analyses = { unusedparams = true },
-            directoryFilters = { "-**/node_modules", "-**/vendor", "-**/dist", "-**/.git" },
-          },
-        },
-      })
+      vim.lsp.config("gopls", require("config.gopls_router").server())
       vim.lsp.enable("gopls")
 
       -- =========================

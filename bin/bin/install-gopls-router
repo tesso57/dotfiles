@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="${GOPLS_ROUTER_REPO:-tesso57/gopls-router}"
+repo_url="${GOPLS_ROUTER_REPO_URL:-git@github.com:${repo}.git}"
+repo_dir="${GOPLS_ROUTER_REPO_DIR:-$HOME/.local/share/gopls-router/repo}"
+ref="${GOPLS_ROUTER_REF:-main}"
+bin="${GOPLS_ROUTER_BIN:-$HOME/.local/bin/gopls-router}"
+gocache="${GOPLS_ROUTER_GOCACHE:-/tmp/gopls-router-go-build-cache}"
+
+require_cmd() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    echo "install-gopls-router: $name is required" >&2
+    exit 1
+  fi
+}
+
+run_go() {
+  if command -v go >/dev/null 2>&1; then
+    go "$@"
+  elif command -v mise >/dev/null 2>&1; then
+    mise exec -- go "$@"
+  else
+    echo "install-gopls-router: go or mise is required" >&2
+    exit 1
+  fi
+}
+
+clone_repo() {
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    gh repo clone "$repo" "$repo_dir"
+  else
+    git clone "$repo_url" "$repo_dir"
+  fi
+}
+
+checkout_ref() {
+  git -C "$repo_dir" fetch --tags --prune origin
+  if git -C "$repo_dir" show-ref --verify --quiet "refs/remotes/origin/$ref"; then
+    git -C "$repo_dir" checkout -B "$ref" "origin/$ref"
+  else
+    git -C "$repo_dir" checkout --detach "$ref"
+  fi
+}
+
+require_cmd git
+
+mkdir -p "$(dirname "$repo_dir")" "$(dirname "$bin")"
+
+if [ -d "$repo_dir/.git" ]; then
+  if ! git -C "$repo_dir" diff --quiet || ! git -C "$repo_dir" diff --cached --quiet; then
+    echo "install-gopls-router: repo is dirty: $repo_dir" >&2
+    exit 1
+  fi
+else
+  clone_repo
+fi
+
+checkout_ref
+
+export GOCACHE="$gocache"
+run_go -C "$repo_dir" build -o "$bin" ./cmd/gopls-router
+"$bin" help >/dev/null
+
+echo "install-gopls-router: installed $bin from $repo@$ref"
