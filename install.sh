@@ -33,11 +33,6 @@ brew bundle -v --file="$GITHUB_DIR/home/.Brewfile"
 # mise install
 mise install
 
-# install private gopls-router used by Neovim
-if ! "$GITHUB_DIR/bin/bin/install-gopls-router"; then
-    echo "skip install-gopls-router: ensure gh auth or git SSH access, then run '$GITHUB_DIR/bin/bin/install-gopls-router'"
-fi
-
 # install agent skills declared in skills.json
 if command -v gh >/dev/null 2>&1 && gh auth status &>/dev/null; then
     "$GITHUB_DIR/bin/bin/sync-skills"

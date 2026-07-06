@@ -26,20 +26,37 @@ git pull
 ./sync.sh
 brew bundle -v --file=./home/.Brewfile
 mise install
-bin/bin/install-gopls-router
 ```
 
 ## Neovim
 
 Neovim の Go LSP は private repository の `gopls-router` を使います。
 
-- installer: `bin/bin/install-gopls-router`
+- Mason package: `gopls-router`
 - source repo: `tesso57/gopls-router`
-- managed clone: `~/.local/share/gopls-router/repo`
-- binary: `~/.local/bin/gopls-router`
+- primary binary: `~/.local/share/nvim/mason/bin/gopls-router`
 - shared config: `nvim/.config/nvim/lua/config/gopls_router.lua`
 
-Install or update manually:
+Neovim loads the private `gopls-router` repository as a lazy.nvim dependency.
+That repository provides the Mason Lua registry, and `mason-tool-installer`
+installs the `gopls-router` binary into Mason's bin directory.
+
+Install or rebuild it manually from Neovim:
+
+```vim
+:MasonInstall gopls-router
+:MasonToolsInstall
+```
+
+The private repo must be reachable by git. By default the config uses:
+
+```text
+git@github.com:tesso57/gopls-router.git
+```
+
+Override it with `GOPLS_ROUTER_REPO_URL` if needed.
+
+Fallback manual install:
 
 ```sh
 bin/bin/install-gopls-router

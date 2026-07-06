@@ -1,13 +1,36 @@
+local gopls_router_registry = {
+  name = "gopls-router-mason-registry",
+  url = vim.env.GOPLS_ROUTER_REPO_URL or "git@github.com:tesso57/gopls-router.git",
+  lazy = true,
+}
+
 return {
   -- LSPサーバー等のインストール管理
-  { "mason-org/mason.nvim", opts = {} },
+  {
+    "mason-org/mason.nvim",
+    dependencies = { gopls_router_registry },
+    opts = {
+      registries = {
+        "lua:gopls_router_mason_registry.index",
+        "github:mason-org/mason-registry",
+      },
+    },
+  },
 
   -- Mason 経由でLSP以外のツール(formatter等)も自動インストール
   {
     "WhoIsSethDaniel/mason-tool-installer.nvim",
     dependencies = { "mason-org/mason.nvim" },
     opts = {
-      ensure_installed = { "ruff" },
+      ensure_installed = {
+        "ruff",
+        {
+          "gopls-router",
+          condition = function()
+            return vim.fn.executable("git") == 1 and (vim.fn.executable("go") == 1 or vim.fn.executable("mise") == 1)
+          end,
+        },
+      },
       auto_update = false,
       run_on_start = true,
     },
@@ -17,7 +40,7 @@ return {
   {
     "mason-org/mason-lspconfig.nvim",
     dependencies = {
-      { "mason-org/mason.nvim", opts = {} },
+      "mason-org/mason.nvim",
       "neovim/nvim-lspconfig",
     },
     opts = {
